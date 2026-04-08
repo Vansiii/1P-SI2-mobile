@@ -32,6 +32,15 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+pubspec.lock
+
+# Generated plugin files
+**/generated_plugin_registrant.dart
+**/generated_plugin_registrant.h
+**/generated_plugin_registrant.cc
+**/GeneratedPluginRegistrant.swift
+**/GeneratedPluginRegistrant.m
+**/generated_plugins.cmake
 
 # Symbolication related
 app.*.symbols
