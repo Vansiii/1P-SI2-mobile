@@ -5,9 +5,8 @@ import 'dart:async';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/widgets/error_message.dart';
-import '../../../shared/validators/form_validators.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../providers/auth_provider.dart';
-import '../../../data/repositories/auth_repository.dart';
 
 class Verify2FAScreen extends ConsumerStatefulWidget {
   final String email;
@@ -90,13 +89,7 @@ class _Verify2FAScreenState extends ConsumerState<Verify2FAScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Código reenviado exitosamente'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-
+      SnackBarUtils.showSuccess(context, 'Código reenviado exitosamente');
       _startResendCountdown();
     } catch (e) {
       setState(() => _errorMessage = e.toString());

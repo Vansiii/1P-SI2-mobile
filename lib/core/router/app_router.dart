@@ -13,10 +13,20 @@ import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/security/presentation/two_factor_screen.dart';
 import '../../features/security/presentation/session_history_screen.dart';
 import '../../features/security/presentation/delete_account_screen.dart';
+import '../../features/vehicles/presentation/vehicles_list_screen.dart';
+import '../../features/vehicles/presentation/add_vehicle_screen.dart';
+import '../../features/vehicles/presentation/vehicle_detail_screen.dart';
+import '../../features/vehicles/presentation/edit_vehicle_screen.dart';
+import '../../features/vehicles/presentation/vehicle_history_screen.dart';
+import '../../features/incidents/presentation/incidents_list_screen.dart';
+import '../../features/incidents/presentation/report_incident_screen.dart';
+import '../../features/incidents/presentation/incident_detail_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
 /// App Router Configuration with GoRouter
 final goRouterProvider = Provider<GoRouter>((ref) {
+  // authNotifier se usa implícitamente a través de refreshListenable
+  // ignore: unused_local_variable
   final authNotifier = ref.read(authProvider.notifier);
 
   return GoRouter(
@@ -162,6 +172,62 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/delete-account',
         name: 'delete-account',
         builder: (context, state) => const DeleteAccountScreen(),
+      ),
+
+      // Vehicles Routes
+      GoRoute(
+        path: '/vehicles',
+        name: 'vehicles',
+        builder: (context, state) => const VehiclesListScreen(),
+      ),
+      GoRoute(
+        path: '/vehicles/add',
+        name: 'add-vehicle',
+        builder: (context, state) => const AddVehicleScreen(),
+      ),
+      GoRoute(
+        path: '/vehicles/:id',
+        name: 'vehicle-detail',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return VehicleDetailScreen(vehicleId: id);
+        },
+      ),
+      GoRoute(
+        path: '/vehicles/:id/edit',
+        name: 'edit-vehicle',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return EditVehicleScreen(vehicleId: id);
+        },
+      ),
+      GoRoute(
+        path: '/vehicles/:id/history',
+        name: 'vehicle-history',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return VehicleHistoryScreen(vehicleId: id);
+        },
+      ),
+
+      // Incidents Routes
+      GoRoute(
+        path: '/incidents',
+        name: 'incidents',
+        builder: (context, state) => const IncidentsListScreen(),
+      ),
+      GoRoute(
+        path: '/incidents/report',
+        name: 'report-incident',
+        builder: (context, state) => const ReportIncidentScreen(),
+      ),
+      GoRoute(
+        path: '/incidents/:id',
+        name: 'incident-detail',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return IncidentDetailScreen(incidentId: id);
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

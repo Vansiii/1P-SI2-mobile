@@ -9,14 +9,17 @@ class SnackBarUtils {
 
   /// Mostrar mensaje de error
   static void showError(BuildContext? context, String message) {
-    print('📢 Intentando mostrar error: $message');
     final messenger = scaffoldMessengerKey.currentState;
     if (messenger == null) {
-      print('⚠️ ScaffoldMessenger no disponible');
       return;
     }
 
-    print('✅ Mostrando SnackBar de error');
+    // Limpiar el mensaje de error
+    String cleanMessage = message
+        .replaceFirst('Exception: ', '')
+        .replaceFirst('Error: ', '')
+        .trim();
+
     messenger.showSnackBar(
       SnackBar(
         content: Row(
@@ -24,7 +27,10 @@ class SnackBarUtils {
             const Icon(Icons.error_outline, color: Colors.white),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(message, style: const TextStyle(color: Colors.white)),
+              child: Text(
+                cleanMessage,
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),

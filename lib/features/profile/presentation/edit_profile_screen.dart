@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/config/app_constants.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/widgets/custom_text_field.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
@@ -112,22 +113,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       await ref.read(authProvider.notifier).refreshProfile();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Perfil actualizado exitosamente'),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        SnackBarUtils.showSuccess(context, 'Perfil actualizado exitosamente');
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        SnackBarUtils.showError(context, e.toString());
       }
     } finally {
       if (mounted) {

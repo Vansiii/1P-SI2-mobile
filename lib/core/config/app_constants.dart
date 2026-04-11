@@ -1,7 +1,7 @@
 /// Application Constants
 class AppConstants {
   // App Info
-  static const String appName = 'Merchanic Repair';
+  static const String appName = 'MecánicoYa';
   static const String appVersion = '1.0.0';
 
   // Storage Keys

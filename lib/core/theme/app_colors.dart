@@ -10,14 +10,17 @@ class AppColors {
   // Background
   static const Color baseBg = Color(0xFFf8fafc);
   static const Color surface = Color(0xFFffffff);
+  static const Color cardBg = Color(0xFFffffff); // Agregado para cards
 
   // Borders
   static const Color borderLight = Color(0xFFe5e7eb);
   static const Color borderFocus = Color(0xFFc2410c);
+  static const Color border = Color(0xFFe5e7eb); // Alias para borderLight
 
   // Text
   static const Color textMain = Color(0xFF111827);
   static const Color textMuted = Color(0xFF6b7280);
+  static const Color textPrimary = Color(0xFF111827); // Alias para textMain
 
   // Status
   static const Color error = Color(0xFFef4444);

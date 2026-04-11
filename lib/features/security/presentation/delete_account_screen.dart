@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class DeleteAccountScreen extends ConsumerStatefulWidget {
@@ -115,23 +116,7 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen>
 
       setState(() => _isLoading = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white, size: 20),
-              const SizedBox(width: 12),
-              Expanded(child: Text(e.toString())),
-            ],
-          ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      SnackBarUtils.showError(context, e.toString());
     }
   }
 

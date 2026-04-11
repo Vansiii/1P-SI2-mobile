@@ -1,6 +1,6 @@
 # Merchanic Repair - Aplicación Móvil
 
-Aplicación móvil profesional para el sistema de gestión de talleres mecánicos, desarrollada con Flutter y coherente con el frontend web.
+Aplicación móvil profesional para MecanicoYa, desarrollada con Flutter y coherente con el frontend web.
 
 ## 🎨 Identidad Visual
 
@@ -261,7 +261,7 @@ Proyecto académico - Universidad [Nombre]
 
 ## 👥 Equipo
 
-Desarrollado como parte del proyecto 1P-SI2 - Sistema de Gestión de Talleres Mecánicos
+Desarrollado como parte del proyecto 1P-SI2 - MecanicoYa
 
 ---
 
