@@ -5,16 +5,34 @@ import 'core/theme/app_theme.dart';
 import 'core/config/app_constants.dart';
 import 'core/router/app_router.dart';
 import 'shared/utils/snackbar_utils.dart';
+import 'data/services/api_service.dart';
+import 'features/auth/providers/auth_provider.dart';
 
 void main() {
   runApp(const ProviderScope(child: MerchanicRepairApp()));
 }
 
-class MerchanicRepairApp extends ConsumerWidget {
+class MerchanicRepairApp extends ConsumerStatefulWidget {
   const MerchanicRepairApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MerchanicRepairApp> createState() => _MerchanicRepairAppState();
+}
+
+class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
+  @override
+  void initState() {
+    super.initState();
+
+    // Configurar callback para manejar sesión expirada
+    ApiService.onSessionExpired = () {
+      // Invalidar el auth provider para forzar logout
+      ref.invalidate(authProvider);
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(goRouterProvider);
 
     return MaterialApp.router(

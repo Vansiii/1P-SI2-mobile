@@ -143,9 +143,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // Obtener el perfil completo del usuario
     // Los endpoints de login y verify-2fa pueden no devolver todos los campos
     try {
-      print('🔄 Obteniendo perfil completo del usuario...');
       final fullUser = await _authRepository.getProfile();
-      print('✅ Perfil completo obtenido exitosamente');
 
       state = state.copyWith(
         isAuthenticated: true,
@@ -154,8 +152,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     } catch (profileError) {
       // Si falla obtener el perfil, usar los datos básicos de la respuesta
-      print('⚠️ Error al obtener perfil completo: $profileError');
-      print('📝 Usando datos básicos de la respuesta de autenticación');
 
       state = state.copyWith(
         isAuthenticated: true,

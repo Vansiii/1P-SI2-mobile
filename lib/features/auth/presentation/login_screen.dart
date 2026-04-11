@@ -66,34 +66,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final password = _passwordController.text;
 
     try {
-      print('🔑 Iniciando proceso de login...');
-
       final response = await ref
           .read(authProvider.notifier)
           .login(email, password);
-
-      print('✅ Login exitoso, respuesta recibida');
-      print('🔍 requires2fa: ${response.requires2fa}');
-      print('🔍 userType: ${response.userType}');
-      print('🔍 mounted: $mounted');
 
       if (mounted) {
         setState(() => _isLoading = false);
       }
 
       if (!mounted) {
-        print('⚠️ Widget no está montado, cancelando navegación');
         return;
       }
 
       if (response.requires2fa) {
-        print('📱 2FA requerido, navegando a verify-2fa...');
-        print('📧 Email para 2FA: $email');
-
-        print('🚀 Ejecutando navegación...');
         final navigator = GoRouter.of(context);
         navigator.pushNamed('verify-2fa', pathParameters: {'email': email});
-        print('✅ Navegación ejecutada');
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -117,8 +104,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           );
         }
       } else {
-        print('🏠 Navegando a home');
-
         if (mounted) {
           final navigator = GoRouter.of(context);
           navigator.go('/home');
@@ -143,9 +128,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         }
       }
     } catch (e) {
-      print('❌ Error capturado en UI: $e');
-      print('🔍 Tipo de error: ${e.runtimeType}');
-
       if (mounted) {
         setState(() => _isLoading = false);
       }

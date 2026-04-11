@@ -120,7 +120,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                       ],
                     ),
                     child: const Icon(
-                      Icons.build_circle,
+                      Icons.construction,
                       size: 64,
                       color: Colors.white,
                     ),
@@ -135,26 +135,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 position: _slideAnimation,
                 child: FadeTransition(
                   opacity: _fadeAnimation,
-                  child: Column(
-                    children: [
-                      Text(
-                        'TallerApp',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textMain,
-                              letterSpacing: 1.2,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Sistema de Gestión de Talleres',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textMuted,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    'MecánicoYa',
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textMain,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                 ),
               ),

@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/config/app_constants.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/widgets/logout_dialog.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -46,12 +47,7 @@ class ProfileScreen extends ConsumerWidget {
             onPressed: () async {
               await ref.read(authProvider.notifier).refreshProfile();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Perfil actualizado'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
+                SnackBarUtils.showSuccess(context, 'Perfil actualizado');
               }
             },
           ),
@@ -231,6 +227,17 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.person_outline,
                         label: 'Propietario',
                         value: user.ownerName ?? 'N/A',
+                      ),
+                    ],
+
+                    // Administrador específico
+                    if (user.userType == AppConstants.userTypeAdmin) ...[
+                      const Divider(height: 24),
+                      _buildInfoRow(
+                        context,
+                        icon: Icons.admin_panel_settings,
+                        label: 'Nivel de rol',
+                        value: user.roleLevel?.toString() ?? 'N/A',
                       ),
                     ],
 

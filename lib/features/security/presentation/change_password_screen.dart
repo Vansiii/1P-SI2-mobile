@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class ChangePasswordScreen extends ConsumerStatefulWidget {
@@ -49,20 +50,16 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
 
       if (!mounted) return;
 
-      // Mostrar mensaje de éxito en snackbar
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: AppColors.success),
-      );
+      // Mostrar mensaje de éxito
+      SnackBarUtils.showSuccess(context, message);
 
       // Volver atrás
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
 
-      // Mostrar error en snackbar en lugar del widget de error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
-      );
+      // Mostrar error
+      SnackBarUtils.showError(context, e.toString());
 
       setState(() {
         _isLoading = false;

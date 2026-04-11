@@ -133,26 +133,32 @@ class AuthRepository {
       print('🔍 Obteniendo perfil del usuario...');
       final response = await _apiService.get('${ApiConfig.auth}/me');
 
-      print('📥 Respuesta del perfil: ${response.data}');
+      print('📥 Respuesta COMPLETA del perfil: ${response.data}');
 
-      // El backend devuelve los datos directamente en 'data'
-      final userData = response.data['data'] as Map<String, dynamic>;
+      // El backend devuelve los datos dentro de 'data'
+      final responseData = response.data as Map<String, dynamic>;
+      final userData = responseData['data'] as Map<String, dynamic>;
 
       print('👤 Datos del usuario parseados:');
+      print('   - ID: ${userData['id']}');
       print('   - email: ${userData['email']}');
       print('   - first_name: ${userData['first_name']}');
       print('   - last_name: ${userData['last_name']}');
       print('   - phone: ${userData['phone']}');
       print('   - user_type: ${userData['user_type']}');
+      print('   - is_active: ${userData['is_active']}');
       print('   - two_factor_enabled: ${userData['two_factor_enabled']}');
-      print('   - ci: ${userData['ci']}');
-      print('   - direccion: ${userData['direccion']}');
-      print('   - fecha_nacimiento: ${userData['fecha_nacimiento']}');
+      print('   - role_level: ${userData['role_level']}');
+      print('   - created_at: ${userData['created_at']}');
+      print('   - updated_at: ${userData['updated_at']}');
 
       final user = UserModel.fromJson(userData);
       await _storageService.saveUserData(user);
 
       print('✅ Perfil cargado exitosamente');
+      print(
+        '✅ Usuario final: firstName=${user.firstName}, lastName=${user.lastName}, phone=${user.phone}, roleLevel=${user.roleLevel}',
+      );
       return user;
     } on DioException catch (e) {
       print('❌ Error al obtener perfil: ${e.response?.statusCode}');

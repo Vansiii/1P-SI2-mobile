@@ -2,10 +2,14 @@ import 'package:dio/dio.dart';
 import '../../core/config/api_config.dart';
 import 'storage_service.dart';
 
+/// Callback global para manejar sesión expirada
+typedef OnSessionExpiredCallback = void Function();
+
 /// API Service - Cliente HTTP con Dio
 class ApiService {
   late final Dio _dio;
   final StorageService _storageService;
+  static OnSessionExpiredCallback? onSessionExpired;
 
   ApiService(this._storageService) {
     _dio = Dio(
@@ -43,34 +47,35 @@ class ApiService {
     return InterceptorsWrapper(
       onError: (error, handler) async {
         if (error.response?.statusCode == 401) {
-          // Token expirado - limpiar y redirigir a login
+          // Token expirado - cerrar sesión automáticamente
           await _storageService.clearAll();
-          // TODO: Navegar a login
+
+          if (onSessionExpired != null) {
+            onSessionExpired!();
+          }
         }
         handler.next(error);
       },
     );
   }
 
-  // Logging Interceptor - Para debugging
+  // Logging Interceptor - Deshabilitado en producción para seguridad
   Interceptor _loggingInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) {
-        print('🌐 REQUEST[${options.method}] => ${options.uri}');
-        print('📦 DATA: ${options.data}');
+        // Log deshabilitado para evitar exponer datos sensibles
         handler.next(options);
       },
       onResponse: (response, handler) {
-        print(
-          '✅ RESPONSE[${response.statusCode}] => ${response.requestOptions.uri}',
-        );
+        // Log deshabilitado para evitar exponer datos sensibles
         handler.next(response);
       },
       onError: (error, handler) {
-        print(
-          '❌ ERROR[${error.response?.statusCode}] => ${error.requestOptions.uri}',
-        );
-        print('📛 MESSAGE: ${error.message}');
+        // Solo log de errores críticos sin detalles sensibles
+        if (error.response?.statusCode != null &&
+            error.response!.statusCode! >= 500) {
+          // Error del servidor
+        }
         handler.next(error);
       },
     );

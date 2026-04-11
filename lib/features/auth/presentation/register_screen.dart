@@ -6,6 +6,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../providers/auth_provider.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -118,22 +119,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
     if (!_formKey.currentState!.validate()) return;
 
     if (_fechaNacimiento == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.warning_amber, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Text('Selecciona tu fecha de nacimiento'),
-            ],
-          ),
-          backgroundColor: AppColors.warning,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      SnackBarUtils.showWarning(context, 'Selecciona tu fecha de nacimiento');
       return;
     }
 
@@ -173,24 +159,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
       if (!mounted) return;
 
       setState(() => _isLoading = false);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white, size: 20),
-              const SizedBox(width: 12),
-              Expanded(child: Text(e.toString())),
-            ],
-          ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      SnackBarUtils.showError(context, e.toString());
     }
   }
 

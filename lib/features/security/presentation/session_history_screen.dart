@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../data/models/session_model.dart';
 import '../providers/session_provider.dart';
 
@@ -324,21 +325,14 @@ class SessionHistoryScreen extends ConsumerWidget {
                 final actions = ref.read(sessionActionsProvider);
                 await actions.revokeSession(session.jti);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Sesión cerrada exitosamente'),
-                      backgroundColor: AppColors.success,
-                    ),
+                  SnackBarUtils.showSuccess(
+                    context,
+                    'Sesión cerrada exitosamente',
                   );
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al cerrar sesión: $e'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
+                  SnackBarUtils.showError(context, e.toString());
                 }
               }
             },
@@ -370,21 +364,14 @@ class SessionHistoryScreen extends ConsumerWidget {
                 final actions = ref.read(sessionActionsProvider);
                 final count = await actions.revokeAllSessions();
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Se cerraron $count sesiones exitosamente'),
-                      backgroundColor: AppColors.success,
-                    ),
+                  SnackBarUtils.showSuccess(
+                    context,
+                    'Se cerraron $count sesiones exitosamente',
                   );
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error al cerrar sesiones: $e'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
+                  SnackBarUtils.showError(context, e.toString());
                 }
               }
             },

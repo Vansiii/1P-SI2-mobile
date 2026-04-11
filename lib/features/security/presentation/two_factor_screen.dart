@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/widgets/custom_text_field.dart';
+import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class TwoFactorScreen extends ConsumerStatefulWidget {
@@ -39,21 +40,11 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] as String),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        SnackBarUtils.showSuccess(context, result['message'] as String);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        SnackBarUtils.showError(context, e.toString());
       }
     } finally {
       if (mounted) {
@@ -64,12 +55,7 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
 
   Future<void> _verifyOTP() async {
     if (_otpController.text.trim().length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('El código debe tener 6 dígitos'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      SnackBarUtils.showError(context, 'El código debe tener 6 dígitos');
       return;
     }
 
@@ -84,22 +70,12 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
       await ref.read(authProvider.notifier).refreshProfile();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] as String),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        SnackBarUtils.showSuccess(context, result['message'] as String);
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        SnackBarUtils.showError(context, e.toString());
       }
     } finally {
       if (mounted) {
@@ -110,12 +86,7 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
 
   Future<void> _disable2FA() async {
     if (_passwordController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ingresa tu contraseña para continuar'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      SnackBarUtils.showError(context, 'Ingresa tu contraseña para continuar');
       return;
     }
 
@@ -130,22 +101,12 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
       await ref.read(authProvider.notifier).refreshProfile();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] as String),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        SnackBarUtils.showSuccess(context, result['message'] as String);
         context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        SnackBarUtils.showError(context, e.toString());
       }
     } finally {
       if (mounted) {
@@ -165,18 +126,11 @@ class _TwoFactorScreenState extends ConsumerState<TwoFactorScreen> {
           .resendOTP(_pendingEmail!);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), backgroundColor: AppColors.success),
-        );
+        SnackBarUtils.showSuccess(context, message);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        SnackBarUtils.showError(context, e.toString());
       }
     } finally {
       if (mounted) {

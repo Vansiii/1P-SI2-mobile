@@ -1,8 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Permisos para geolocalización -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Permiso para internet (API calls) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Permiso para cámara (futuro: captura de evidencias) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Permiso para micrófono (futuro: grabación de audio) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
     <application
-        android:label="mobile"
+        android:label="MecánicoYa"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="YOUR_GOOGLE_MAPS_API_KEY_HERE"/>
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -41,5 +57,22 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        
+        <!-- Queries para url_launcher - abrir mapas y navegadores -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        
+        <!-- Google Maps -->
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 </manifest>
