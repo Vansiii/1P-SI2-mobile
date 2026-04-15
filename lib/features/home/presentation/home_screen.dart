@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/utils/snackbar_utils.dart';
+import '../../../shared/utils/permission_utils.dart';
 import '../../profile/presentation/profile_screen.dart';
 import '../../security/presentation/security_screen.dart';
 import 'dashboard_screen.dart';
@@ -24,20 +24,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ];
 
   Future<void> _openCamera() async {
-    final ImagePicker picker = ImagePicker();
-    try {
-      final XFile? photo = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 80,
-      );
+    final photo = await PermissionUtils.requestCameraAndTakePhoto(context);
 
-      if (photo != null && mounted) {
-        SnackBarUtils.showSuccess(context, 'Foto capturada: ${photo.name}');
-      }
-    } catch (e) {
-      if (mounted) {
-        SnackBarUtils.showError(context, 'Error al abrir cámara: $e');
-      }
+    if (photo != null && mounted) {
+      SnackBarUtils.showSuccess(context, 'Foto capturada: ${photo.name}');
     }
   }
 

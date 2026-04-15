@@ -1,15 +1,18 @@
+import 'environment.dart';
+
 /// API Configuration
 class ApiConfig {
-  // Base URL - Configuración para desarrollo local
-  // IMPORTANTE: Cambiar según tu entorno
+  // Base URL - Se obtiene dinámicamente del entorno configurado
+  static String get baseUrl => EnvironmentConfig.current.apiBaseUrl;
 
-  // Para dispositivo físico en la misma red WiFi
-  static const String baseUrl = 'http://192.168.1.2:8000';
+  // Logging - Habilitado solo en desarrollo
+  static bool get enableLogging => EnvironmentConfig.current.enableLogging;
 
-  // Otras opciones según tu caso:
-  // - Emulador Android: 'http://10.0.2.2:8000'
-  // - iOS Simulator: 'http://localhost:8000'
-  // - Producción: 'https://api.tudominio.com'
+  // Timeouts - Configurados desde .env
+  static Duration get connectTimeout =>
+      EnvironmentConfig.current.connectTimeout;
+  static Duration get receiveTimeout =>
+      EnvironmentConfig.current.receiveTimeout;
 
   static const String apiVersion = '/api/v1';
 
@@ -23,10 +26,6 @@ class ApiConfig {
   static const String health = '$apiVersion/health';
   static const String vehiculos = '$apiVersion/vehiculos';
   static const String incidentes = '$apiVersion/incidentes';
-
-  // Timeouts - Aumentados para conexiones lentas
-  static const Duration connectTimeout = Duration(seconds: 60);
-  static const Duration receiveTimeout = Duration(seconds: 60);
 
   // Headers
   static const Map<String, String> defaultHeaders = {

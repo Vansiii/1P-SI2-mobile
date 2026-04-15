@@ -42,6 +42,9 @@ dependencies:
   # Secure Storage (JWT tokens)
   flutter_secure_storage: ^9.2.2
   
+  # Shared Preferences (for lockout state)
+  shared_preferences: ^2.3.3
+  
   # Navigation
   go_router: ^14.6.2
   
@@ -77,6 +80,12 @@ dependencies:
   
   # Audio Player (para reproducir audios)
   audioplayers: ^6.1.0
+  
+  # Permission Handler (para solicitar permisos)
+  permission_handler: ^11.3.1
+  
+  # Environment Variables
+  flutter_dotenv: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -101,9 +110,9 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - .env.development
+    - .env.production
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -59,22 +59,37 @@ class ApiService {
     );
   }
 
-  // Logging Interceptor - Deshabilitado en producción para seguridad
+  // Logging Interceptor - Habilitado solo en desarrollo
   Interceptor _loggingInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) {
-        // Log deshabilitado para evitar exponer datos sensibles
+        if (ApiConfig.enableLogging) {
+          print('🌐 REQUEST[${options.method}] => ${options.uri}');
+          print('Headers: ${options.headers}');
+          if (options.data != null) {
+            print('Data: ${options.data}');
+          }
+        }
         handler.next(options);
       },
       onResponse: (response, handler) {
-        // Log deshabilitado para evitar exponer datos sensibles
+        if (ApiConfig.enableLogging) {
+          print(
+            '✅ RESPONSE[${response.statusCode}] => ${response.requestOptions.uri}',
+          );
+          print('Data: ${response.data}');
+        }
         handler.next(response);
       },
       onError: (error, handler) {
-        // Solo log de errores críticos sin detalles sensibles
-        if (error.response?.statusCode != null &&
-            error.response!.statusCode! >= 500) {
-          // Error del servidor
+        if (ApiConfig.enableLogging) {
+          print(
+            '❌ ERROR[${error.response?.statusCode}] => ${error.requestOptions.uri}',
+          );
+          print('Message: ${error.message}');
+          if (error.response?.data != null) {
+            print('Error Data: ${error.response?.data}');
+          }
         }
         handler.next(error);
       },

@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
 import '../providers/auth_provider.dart';
+
+const String _loginLockoutUntilKey = 'auth_login_lockout_until';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +29,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+
+  // Lockout state
+  DateTime? _lockoutUntil;
+  int _lockoutRemainingSeconds = 0;
+  Timer? _lockoutTimer;
+  bool get _isLoginLocked => _lockoutRemainingSeconds > 0;
 
   @override
   void initState() {
@@ -47,6 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         );
 
     _animationController.forward();
+    _restoreLockoutState();
   }
 
   @override
@@ -54,10 +65,170 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _animationController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _stopLockoutTimer();
     super.dispose();
   }
 
+  Future<void> _restoreLockoutState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedLockoutUntil = prefs.getString(_loginLockoutUntilKey);
+
+    if (storedLockoutUntil != null) {
+      final lockoutUntil = DateTime.tryParse(storedLockoutUntil);
+      if (lockoutUntil != null) {
+        _activateLockout(lockoutUntil);
+      }
+    }
+  }
+
+  void _activateLockout(DateTime lockoutUntil) {
+    if (lockoutUntil.isBefore(DateTime.now())) {
+      _clearLockoutState();
+      return;
+    }
+
+    setState(() {
+      _lockoutUntil = lockoutUntil;
+    });
+
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString(_loginLockoutUntilKey, lockoutUntil.toIso8601String());
+    });
+
+    _refreshRemainingLockoutSeconds();
+    _startLockoutTimer();
+  }
+
+  void _refreshRemainingLockoutSeconds() {
+    if (_lockoutUntil == null) {
+      setState(() {
+        _lockoutRemainingSeconds = 0;
+      });
+      return;
+    }
+
+    final remainingSeconds = _lockoutUntil!
+        .difference(DateTime.now())
+        .inSeconds;
+    setState(() {
+      _lockoutRemainingSeconds = remainingSeconds > 0 ? remainingSeconds : 0;
+    });
+
+    if (_lockoutRemainingSeconds == 0) {
+      _clearLockoutState();
+    }
+  }
+
+  void _startLockoutTimer() {
+    _stopLockoutTimer();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _refreshRemainingLockoutSeconds();
+    });
+  }
+
+  void _stopLockoutTimer() {
+    _lockoutTimer?.cancel();
+    _lockoutTimer = null;
+  }
+
+  Future<void> _clearLockoutState() async {
+    _stopLockoutTimer();
+    setState(() {
+      _lockoutUntil = null;
+      _lockoutRemainingSeconds = 0;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_loginLockoutUntilKey);
+  }
+
+  String _formatDuration(int totalSeconds) {
+    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
+  Map<String, dynamic>? _extractLockoutInfo(dynamic error) {
+    // Intentar extraer información de bloqueo del error
+    if (error is Exception) {
+      final errorString = error.toString();
+
+      // Buscar patrón de error de cuenta bloqueada
+      if (errorString.contains('ACCOUNT_LOCKED') ||
+          errorString.toLowerCase().contains('bloqueada') ||
+          errorString.toLowerCase().contains('locked') ||
+          errorString.toLowerCase().contains('múltiples intentos')) {
+        // Intentar extraer lockout_until o retry_after
+        final lockoutUntilMatch = RegExp(
+          r'lockout_until["\s:]+([^,}\s]+)',
+        ).firstMatch(errorString);
+        final retryAfterMatch = RegExp(
+          r'retry_after["\s:]+(\d+)',
+        ).firstMatch(errorString);
+        final remainingSecondsMatch = RegExp(
+          r'remaining_seconds["\s:]+(\d+)',
+        ).firstMatch(errorString);
+
+        if (lockoutUntilMatch != null) {
+          final lockoutUntilStr = lockoutUntilMatch
+              .group(1)
+              ?.replaceAll('"', '');
+          final lockoutUntil = DateTime.tryParse(lockoutUntilStr ?? '');
+          if (lockoutUntil != null) {
+            return {'lockout_until': lockoutUntil};
+          }
+        }
+
+        if (retryAfterMatch != null) {
+          final retryAfter = int.tryParse(retryAfterMatch.group(1) ?? '');
+          if (retryAfter != null) {
+            return {'retry_after': retryAfter};
+          }
+        }
+
+        if (remainingSecondsMatch != null) {
+          final remainingSeconds = int.tryParse(
+            remainingSecondsMatch.group(1) ?? '',
+          );
+          if (remainingSeconds != null) {
+            return {'retry_after': remainingSeconds};
+          }
+        }
+
+        // Si no se puede extraer tiempo específico, usar 5 minutos por defecto
+        return {'retry_after': 300};
+      }
+    }
+
+    return null;
+  }
+
   Future<void> _handleLogin() async {
+    if (_isLoginLocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.lock_clock, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Cuenta temporalmente bloqueada. Intenta nuevamente en ${_formatDuration(_lockoutRemainingSeconds)}.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.warning,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
@@ -73,6 +244,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (mounted) {
         setState(() => _isLoading = false);
       }
+
+      // Limpiar estado de bloqueo si el login es exitoso
+      await _clearLockoutState();
 
       if (!mounted) {
         return;
@@ -132,24 +306,72 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         setState(() => _isLoading = false);
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                Expanded(child: Text(e.toString())),
-              ],
+      // Verificar si el error contiene información de bloqueo
+      final lockoutInfo = _extractLockoutInfo(e);
+
+      if (lockoutInfo != null) {
+        DateTime lockoutUntil;
+
+        if (lockoutInfo.containsKey('lockout_until')) {
+          lockoutUntil = lockoutInfo['lockout_until'] as DateTime;
+        } else if (lockoutInfo.containsKey('retry_after')) {
+          final retryAfter = lockoutInfo['retry_after'] as int;
+          lockoutUntil = DateTime.now().add(Duration(seconds: retryAfter));
+        } else {
+          // Fallback: 5 minutos
+          lockoutUntil = DateTime.now().add(const Duration(minutes: 5));
+        }
+
+        _activateLockout(lockoutUntil);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.lock_clock, color: Colors.white, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Tu cuenta está bloqueada temporalmente por seguridad. Intenta nuevamente en ${_formatDuration(_lockoutRemainingSeconds)}.',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              duration: const Duration(seconds: 5),
             ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+          );
+        }
+      } else {
+        // Error normal (no es bloqueo)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(e.toString())),
+                ],
+              ),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              duration: const Duration(seconds: 4),
             ),
-            duration: const Duration(seconds: 4),
-          ),
-        );
+          );
+        }
       }
     }
   }
@@ -245,6 +467,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         const SizedBox(height: 40),
 
+                        // Lockout warning (si está bloqueado) - MOVIDO AQUÍ
+                        if (_isLoginLocked)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            margin: const EdgeInsets.only(bottom: 24),
+                            decoration: BoxDecoration(
+                              color: AppColors.warning.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.warning.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.lock_clock,
+                                  color: AppColors.warning,
+                                  size: 24,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Cuenta bloqueada',
+                                        style: TextStyle(
+                                          color: AppColors.warning,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Intenta nuevamente en ${_formatDuration(_lockoutRemainingSeconds)}',
+                                        style: const TextStyle(
+                                          color: AppColors.warning,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
                         // Email field con animación
                         TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
@@ -338,8 +609,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             );
                           },
                           child: PrimaryButton(
-                            text: 'Iniciar sesión',
-                            onPressed: _isLoading ? null : _handleLogin,
+                            text: _isLoginLocked
+                                ? 'Bloqueado (${_formatDuration(_lockoutRemainingSeconds)})'
+                                : 'Iniciar sesión',
+                            onPressed: (_isLoading || _isLoginLocked)
+                                ? null
+                                : _handleLogin,
                             isLoading: _isLoading,
                           ),
                         ),

@@ -39,6 +39,15 @@ class VehiclesListScreen extends ConsumerWidget {
               onPressed: () => Scaffold.of(context).openDrawer(),
             ),
           ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: AppColors.textMain),
+              onPressed: () {
+                ref.read(vehiclesProvider.notifier).loadVehicles();
+              },
+              tooltip: 'Recargar vehículos',
+            ),
+          ],
         ),
         drawer: const AppDrawer(),
         body: vehiclesState.when(
