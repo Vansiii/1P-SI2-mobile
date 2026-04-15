@@ -81,7 +81,7 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Permiso de micrófono denegado'),
+              content: Text('Se necesita permiso para usar el micrófono'),
               backgroundColor: AppColors.error,
             ),
           );

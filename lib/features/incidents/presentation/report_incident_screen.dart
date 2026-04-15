@@ -78,12 +78,12 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw Exception('Permisos de ubicación denegados');
+          throw Exception('Se necesita permiso para acceder a tu ubicación');
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw Exception('Permisos de ubicación denegados permanentemente');
+        throw Exception('Se necesita permiso para acceder a tu ubicación');
       }
 
       final position = await Geolocator.getCurrentPosition(
@@ -181,7 +181,20 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
       }
     } catch (e) {
       if (mounted) {
-        SnackBarUtils.showError(context, e.toString());
+        // Verificar si es un error de permisos
+        final errorMessage = e.toString().toLowerCase();
+        if (errorMessage.contains('camera_access_denied') ||
+            errorMessage.contains('denied') ||
+            errorMessage.contains('permission')) {
+          SnackBarUtils.showError(
+            context,
+            source == ImageSource.camera
+                ? 'Se necesita permiso para usar la cámara'
+                : 'Se necesita permiso para acceder a las fotos',
+          );
+        } else {
+          SnackBarUtils.showError(context, e.toString());
+        }
       }
     }
   }

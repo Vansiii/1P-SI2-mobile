@@ -74,12 +74,12 @@ class _CreateIncidentScreenState extends ConsumerState<CreateIncidentScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          throw Exception('Permisos de ubicación denegados');
+          throw Exception('Se necesita permiso para acceder a tu ubicación');
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        throw Exception('Permisos de ubicación denegados permanentemente');
+        throw Exception('Se necesita permiso para acceder a tu ubicación');
       }
 
       final position = await Geolocator.getCurrentPosition(
@@ -120,7 +120,18 @@ class _CreateIncidentScreenState extends ConsumerState<CreateIncidentScreen> {
       }
     } catch (e) {
       if (mounted) {
-        SnackBarUtils.showError(context, 'Error al seleccionar imágenes: $e');
+        // Verificar si es un error de permisos
+        final errorMessage = e.toString().toLowerCase();
+        if (errorMessage.contains('photo') ||
+            errorMessage.contains('denied') ||
+            errorMessage.contains('permission')) {
+          SnackBarUtils.showError(
+            context,
+            'Se necesita permiso para acceder a las fotos',
+          );
+        } else {
+          SnackBarUtils.showError(context, 'Error al seleccionar imágenes');
+        }
       }
     }
   }
@@ -146,7 +157,18 @@ class _CreateIncidentScreenState extends ConsumerState<CreateIncidentScreen> {
       }
     } catch (e) {
       if (mounted) {
-        SnackBarUtils.showError(context, 'Error al tomar foto: $e');
+        // Verificar si es un error de permisos
+        final errorMessage = e.toString().toLowerCase();
+        if (errorMessage.contains('camera_access_denied') ||
+            errorMessage.contains('denied') ||
+            errorMessage.contains('permission')) {
+          SnackBarUtils.showError(
+            context,
+            'Se necesita permiso para usar la cámara',
+          );
+        } else {
+          SnackBarUtils.showError(context, 'Error al tomar foto');
+        }
       }
     }
   }
@@ -180,11 +202,12 @@ class _CreateIncidentScreenState extends ConsumerState<CreateIncidentScreen> {
           });
         });
       } else {
-        throw Exception('Permisos de micrófono denegados');
+        throw Exception('Se necesita permiso para usar el micrófono');
       }
     } catch (e) {
       if (mounted) {
-        SnackBarUtils.showError(context, 'Error al iniciar grabación: $e');
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+        SnackBarUtils.showError(context, errorMessage);
       }
     }
   }

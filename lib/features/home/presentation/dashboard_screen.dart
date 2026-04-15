@@ -90,10 +90,23 @@ class DashboardScreen extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
+        // Verificar si es un error de permisos denegados
+        final errorMessage = e.toString().toLowerCase();
+        String message;
+
+        if (errorMessage.contains('camera_access_denied') ||
+            errorMessage.contains('denied') ||
+            errorMessage.contains('permission')) {
+          message = 'Se necesita permiso para usar la cámara';
+        } else {
+          message = 'Error al abrir cámara: $e';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error al abrir cámara: $e'),
+            content: Text(message),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

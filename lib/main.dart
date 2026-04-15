@@ -1,14 +1,37 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/config/app_constants.dart';
+import 'core/config/environment.dart';
 import 'core/router/app_router.dart';
 import 'shared/utils/snackbar_utils.dart';
 import 'data/services/api_service.dart';
 import 'features/auth/providers/auth_provider.dart';
 
-void main() {
+/// Entry point por defecto
+/// - flutter run → usa .env.development (local)
+/// - flutter build apk --release → usa .env.production (Railway)
+/// - Para forzar un entorno específico, usa main_development.dart o main_production.dart
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Detectar automáticamente el entorno según el modo de compilación
+  // En release mode → producción
+  // En debug/profile mode → desarrollo
+  final environment = kReleaseMode
+      ? Environment.production
+      : Environment.development;
+
+  await EnvironmentConfig.init(environment);
+
+  // Log de configuración (solo en debug)
+  if (kDebugMode) {
+    print('🚀 Iniciando app en modo: ${EnvironmentConfig.current.environment}');
+    print('🌐 API URL: ${EnvironmentConfig.current.apiBaseUrl}');
+  }
+
   runApp(const ProviderScope(child: MerchanicRepairApp()));
 }
 
@@ -37,7 +60,7 @@ class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
 
     return MaterialApp.router(
       title: AppConstants.appName,
-      debugShowCheckedModeBanner: false,
+      debugShowCheckedModeBanner: EnvironmentConfig.current.enableDebugBanner,
       theme: AppTheme.lightTheme,
       routerConfig: router,
       scaffoldMessengerKey: SnackBarUtils.scaffoldMessengerKey,

@@ -60,29 +60,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // Check auth status on init
   Future<void> _checkAuthStatus() async {
-    state = state.copyWith(isLoading: true);
+    if (mounted) {
+      state = state.copyWith(isLoading: true);
+    }
 
     try {
       final isAuth = await _storageService.isAuthenticated();
       if (isAuth) {
         final user = await _storageService.getUserData();
-        state = state.copyWith(
-          isAuthenticated: true,
-          user: user,
-          isLoading: false,
-        );
+        if (mounted) {
+          state = state.copyWith(
+            isAuthenticated: true,
+            user: user,
+            isLoading: false,
+          );
+        }
       } else {
-        state = state.copyWith(isLoading: false);
+        if (mounted) {
+          state = state.copyWith(isLoading: false);
+        }
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false);
+      if (mounted) {
+        state = state.copyWith(isLoading: false);
+      }
     }
   }
 
   // Login
   // Tipos de usuario permitidos en app móvil: client, technician, administrator
   Future<AuthResponse> login(String email, String password) async {
-    state = state.copyWith(isLoading: true, error: null);
+    if (mounted) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
 
     try {
       final response = await _authRepository.login(
@@ -96,19 +106,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
       } else {
         // Si requiere 2FA, NO actualizar el estado de autenticación
         // Solo quitar el loading para permitir la navegación
-        state = state.copyWith(isLoading: false);
+        if (mounted) {
+          state = state.copyWith(isLoading: false);
+        }
       }
 
       return response;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (mounted) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      }
       rethrow;
     }
   }
 
   // Verify 2FA
   Future<AuthResponse> verify2FA(String email, String otpCode) async {
-    state = state.copyWith(isLoading: true, error: null);
+    if (mounted) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
 
     try {
       final response = await _authRepository.verify2FA(
@@ -121,7 +137,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       return response;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (mounted) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      }
       rethrow;
     }
   }
@@ -134,7 +152,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final allowedTypes = ['client', 'technician', 'administrator', 'admin'];
     if (response.user?.userType != null &&
         !allowedTypes.contains(response.user!.userType)) {
-      state = state.copyWith(isLoading: false);
+      if (mounted) {
+        state = state.copyWith(isLoading: false);
+      }
       throw Exception(
         'Este tipo de usuario no tiene acceso a la aplicación móvil. Por favor, usa la plataforma web.',
       );
@@ -145,19 +165,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final fullUser = await _authRepository.getProfile();
 
-      state = state.copyWith(
-        isAuthenticated: true,
-        user: fullUser,
-        isLoading: false,
-      );
+      if (mounted) {
+        state = state.copyWith(
+          isAuthenticated: true,
+          user: fullUser,
+          isLoading: false,
+        );
+      }
     } catch (profileError) {
       // Si falla obtener el perfil, usar los datos básicos de la respuesta
 
-      state = state.copyWith(
-        isAuthenticated: true,
-        user: response.user,
-        isLoading: false,
-      );
+      if (mounted) {
+        state = state.copyWith(
+          isAuthenticated: true,
+          user: response.user,
+          isLoading: false,
+        );
+      }
     }
   }
 
@@ -175,7 +199,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String ci,
     required DateTime fechaNacimiento,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    if (mounted) {
+      state = state.copyWith(isLoading: true, error: null);
+    }
 
     try {
       final response = await _authRepository.registerClient(
@@ -191,24 +217,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       // NO autenticar automáticamente después del registro
       // El usuario debe iniciar sesión manualmente
-      state = state.copyWith(isLoading: false);
+      if (mounted) {
+        state = state.copyWith(isLoading: false);
+      }
 
       return response;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      if (mounted) {
+        state = state.copyWith(isLoading: false, error: e.toString());
+      }
       rethrow;
     }
   }
 
   // Logout
   Future<void> logout() async {
-    state = state.copyWith(isLoading: true);
+    if (mounted) {
+      state = state.copyWith(isLoading: true);
+    }
 
     try {
       await _authRepository.logout();
-      state = AuthState();
+      if (mounted) {
+        state = AuthState();
+      }
     } catch (e) {
-      state = AuthState();
+      if (mounted) {
+        state = AuthState();
+      }
     }
   }
 
@@ -216,7 +252,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> refreshProfile() async {
     try {
       final user = await _authRepository.getProfile();
-      state = state.copyWith(user: user);
+      if (mounted) {
+        state = state.copyWith(user: user);
+      }
     } catch (e) {
       // Handle error silently
     }
