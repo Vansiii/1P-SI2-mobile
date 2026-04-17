@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../../../../core/config/api_config.dart';
 import '../../../../data/services/storage_service.dart';
 import '../models/incident_model.dart';
+import '../models/incident_ai_analysis_model.dart';
 
 class IncidentRepository {
   final StorageService _storageService = StorageService();
@@ -62,6 +63,72 @@ class IncidentRepository {
     } else {
       throw Exception('Error al obtener incidente: ${response.body}');
     }
+  }
+
+  Future<IncidentAiAnalysisModel?> getLatestIncidentAiAnalysis(
+    int incidentId,
+  ) async {
+    final token = await _storageService.getAccessToken();
+    if (token == null) throw Exception('No hay token de autenticación');
+
+    final response = await http.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.incidentes}/$incidentId/analisis-ia',
+      ),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final jsonData = json.decode(response.body) as Map<String, dynamic>;
+      return IncidentAiAnalysisModel.fromJson(
+        jsonData['data'] as Map<String, dynamic>,
+      );
+    }
+
+    if (response.statusCode == 404 || response.statusCode == 403) {
+      return null;
+    }
+
+    throw Exception('Error al obtener análisis IA: ${response.body}');
+  }
+
+  Future<List<IncidentAiAnalysisModel>> getIncidentAiAnalysisHistory(
+    int incidentId,
+  ) async {
+    final token = await _storageService.getAccessToken();
+    if (token == null) throw Exception('No hay token de autenticación');
+
+    final response = await http.get(
+      Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.incidentes}/$incidentId/analisis-ia/historial',
+      ),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final jsonData = json.decode(response.body) as Map<String, dynamic>;
+      final historyData = jsonData['data'] as List<dynamic>;
+      return historyData
+          .map(
+            (item) =>
+                IncidentAiAnalysisModel.fromJson(item as Map<String, dynamic>),
+          )
+          .toList();
+    }
+
+    if (response.statusCode == 404 || response.statusCode == 403) {
+      return const [];
+    }
+
+    throw Exception(
+      'Error al obtener historial de análisis IA: ${response.body}',
+    );
   }
 
   Future<IncidentModel> createIncident({

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../providers/incident_provider.dart';
+import '../data/models/incident_ai_analysis_model.dart';
 import '../data/models/incident_model.dart';
 
 class IncidentDetailScreen extends ConsumerStatefulWidget {
@@ -20,7 +21,10 @@ class IncidentDetailScreen extends ConsumerStatefulWidget {
 
 class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   IncidentModel? _incident;
+  IncidentAiAnalysisModel? _latestAiAnalysis;
+  List<IncidentAiAnalysisModel> _aiAnalysisHistory = const [];
   bool _isLoading = true;
+  bool _isLoadingAiAnalysis = false;
   String? _error;
 
   // Audio player
@@ -56,6 +60,8 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
           _incident = incident;
           _isLoading = false;
         });
+
+        await _loadAiAnalysisData();
       }
     } catch (e) {
       if (mounted) {
@@ -65,6 +71,42 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadAiAnalysisData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoadingAiAnalysis = true;
+    });
+
+    final incidentsNotifier = ref.read(incidentsProvider.notifier);
+    IncidentAiAnalysisModel? latestAnalysis;
+    List<IncidentAiAnalysisModel> analysisHistory = const [];
+
+    try {
+      latestAnalysis = await incidentsNotifier.getLatestIncidentAiAnalysis(
+        widget.incidentId,
+      );
+    } catch (_) {
+      latestAnalysis = null;
+    }
+
+    try {
+      analysisHistory = await incidentsNotifier.getIncidentAiAnalysisHistory(
+        widget.incidentId,
+      );
+    } catch (_) {
+      analysisHistory = const [];
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _latestAiAnalysis = latestAnalysis;
+      _aiAnalysisHistory = analysisHistory;
+      _isLoadingAiAnalysis = false;
+    });
   }
 
   @override
@@ -241,6 +283,159 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                                 color: AppColors.textMain,
                               ),
                         ),
+                      ),
+                    ),
+                  ],
+
+                  if (_isLoadingAiAnalysis ||
+                      _latestAiAnalysis != null ||
+                      _aiAnalysisHistory.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    _buildSection(
+                      context,
+                      icon: Icons.manage_search_outlined,
+                      title: 'Estado Procesamiento IA',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_isLoadingAiAnalysis)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: LinearProgressIndicator(),
+                            ),
+                          if (_latestAiAnalysis != null)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        _getAiStatusIcon(
+                                          _latestAiAnalysis!.status,
+                                        ),
+                                        size: 20,
+                                        color: _getAiStatusColor(
+                                          _latestAiAnalysis!.status,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _latestAiAnalysis!.statusLabel,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.bold,
+                                              color: _getAiStatusColor(
+                                                _latestAiAnalysis!.status,
+                                              ),
+                                            ),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        'Intento #${_latestAiAnalysis!.attemptNumber}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppColors.textMuted,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Actualizado: ${_formatDateTime(_latestAiAnalysis!.updatedAt)}',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: AppColors.textMuted),
+                                  ),
+                                  if (_latestAiAnalysis!.summary != null &&
+                                      _latestAiAnalysis!.summary!
+                                          .trim()
+                                          .isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _latestAiAnalysis!.summary!,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: AppColors.textMain,
+                                            height: 1.4,
+                                          ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          if (_aiAnalysisHistory.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Historial de análisis',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textMain,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            ..._aiAnalysisHistory
+                                .take(5)
+                                .map(
+                                  (analysis) => Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.cardBg,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          _getAiStatusIcon(analysis.status),
+                                          size: 18,
+                                          color: _getAiStatusColor(
+                                            analysis.status,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Intento #${analysis.attemptNumber} - ${analysis.statusLabel}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: AppColors.textMain,
+                                                ),
+                                          ),
+                                        ),
+                                        Text(
+                                          _formatDateTime(analysis.createdAt),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: AppColors.textMuted,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                          ],
+                        ],
                       ),
                     ),
                   ],
@@ -802,6 +997,36 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
     }
   }
 
+  Color _getAiStatusColor(String status) {
+    switch (status) {
+      case 'pending':
+        return AppColors.warning;
+      case 'processing':
+        return AppColors.primary;
+      case 'completed':
+        return AppColors.success;
+      case 'failed':
+        return AppColors.error;
+      default:
+        return AppColors.textMuted;
+    }
+  }
+
+  IconData _getAiStatusIcon(String status) {
+    switch (status) {
+      case 'pending':
+        return Icons.schedule_outlined;
+      case 'processing':
+        return Icons.autorenew_outlined;
+      case 'completed':
+        return Icons.check_circle_outline;
+      case 'failed':
+        return Icons.error_outline;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
   String _formatDateTime(DateTime date) {
     final months = [
       'Ene',
@@ -938,7 +1163,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         });
       }
     } catch (e) {
-      print('Error playing audio: $e');
+      debugPrint('Error playing audio: $e');
     }
   }
 }

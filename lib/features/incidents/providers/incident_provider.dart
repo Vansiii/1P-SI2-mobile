@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models/incident_model.dart';
+import '../data/models/incident_ai_analysis_model.dart';
 import '../data/repositories/incident_repository.dart';
 
 final incidentRepositoryProvider = Provider((ref) => IncidentRepository());
@@ -80,5 +81,17 @@ class IncidentsNotifier extends StateNotifier<AsyncValue<List<IncidentModel>>> {
 
   Future<IncidentModel> getIncidentDetail(int incidentId) async {
     return await _repository.getIncident(incidentId);
+  }
+
+  Future<IncidentAiAnalysisModel?> getLatestIncidentAiAnalysis(
+    int incidentId,
+  ) async {
+    return await _repository.getLatestIncidentAiAnalysis(incidentId);
+  }
+
+  Future<List<IncidentAiAnalysisModel>> getIncidentAiAnalysisHistory(
+    int incidentId,
+  ) async {
+    return await _repository.getIncidentAiAnalysisHistory(incidentId);
   }
 }
