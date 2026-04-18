@@ -22,7 +22,6 @@ class IncidentDetailScreen extends ConsumerStatefulWidget {
 class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   IncidentModel? _incident;
   IncidentAiAnalysisModel? _latestAiAnalysis;
-  List<IncidentAiAnalysisModel> _aiAnalysisHistory = const [];
   bool _isLoading = true;
   bool _isLoadingAiAnalysis = false;
   String? _error;
@@ -82,7 +81,6 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
 
     final incidentsNotifier = ref.read(incidentsProvider.notifier);
     IncidentAiAnalysisModel? latestAnalysis;
-    List<IncidentAiAnalysisModel> analysisHistory = const [];
 
     try {
       latestAnalysis = await incidentsNotifier.getLatestIncidentAiAnalysis(
@@ -92,19 +90,10 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
       latestAnalysis = null;
     }
 
-    try {
-      analysisHistory = await incidentsNotifier.getIncidentAiAnalysisHistory(
-        widget.incidentId,
-      );
-    } catch (_) {
-      analysisHistory = const [];
-    }
-
     if (!mounted) return;
 
     setState(() {
       _latestAiAnalysis = latestAnalysis;
-      _aiAnalysisHistory = analysisHistory;
       _isLoadingAiAnalysis = false;
     });
   }
@@ -259,42 +248,12 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                     ),
                   ),
 
-                  // Resumen IA
-                  if (incident.resumenIa != null) ...[
+                  if (_isLoadingAiAnalysis || _latestAiAnalysis != null) ...[
                     const SizedBox(height: 20),
                     _buildSection(
                       context,
-                      icon: Icons.auto_awesome,
-                      title: 'Análisis IA',
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.info.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppColors.info.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Text(
-                          incident.resumenIa!,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                height: 1.5,
-                                color: AppColors.textMain,
-                              ),
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  if (_isLoadingAiAnalysis ||
-                      _latestAiAnalysis != null ||
-                      _aiAnalysisHistory.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    _buildSection(
-                      context,
-                      icon: Icons.manage_search_outlined,
-                      title: 'Estado Procesamiento IA',
+                      icon: Icons.psychology_alt_outlined,
+                      title: 'Detalle IA',
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -304,137 +263,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                               child: LinearProgressIndicator(),
                             ),
                           if (_latestAiAnalysis != null)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: AppColors.cardBg,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: AppColors.border),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        _getAiStatusIcon(
-                                          _latestAiAnalysis!.status,
-                                        ),
-                                        size: 20,
-                                        color: _getAiStatusColor(
-                                          _latestAiAnalysis!.status,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        _latestAiAnalysis!.statusLabel,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                              color: _getAiStatusColor(
-                                                _latestAiAnalysis!.status,
-                                              ),
-                                            ),
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        'Intento #${_latestAiAnalysis!.attemptNumber}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: AppColors.textMuted,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Actualizado: ${_formatDateTime(_latestAiAnalysis!.updatedAt)}',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(color: AppColors.textMuted),
-                                  ),
-                                  if (_latestAiAnalysis!.summary != null &&
-                                      _latestAiAnalysis!.summary!
-                                          .trim()
-                                          .isNotEmpty) ...[
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      _latestAiAnalysis!.summary!,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: AppColors.textMain,
-                                            height: 1.4,
-                                          ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          if (_aiAnalysisHistory.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              'Historial de análisis',
-                              style: Theme.of(context).textTheme.titleSmall
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textMain,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            ..._aiAnalysisHistory
-                                .take(5)
-                                .map(
-                                  (analysis) => Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.cardBg,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: AppColors.border,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          _getAiStatusIcon(analysis.status),
-                                          size: 18,
-                                          color: _getAiStatusColor(
-                                            analysis.status,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            'Intento #${analysis.attemptNumber} - ${analysis.statusLabel}',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  color: AppColors.textMain,
-                                                ),
-                                          ),
-                                        ),
-                                        Text(
-                                          _formatDateTime(analysis.createdAt),
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall
-                                              ?.copyWith(
-                                                color: AppColors.textMuted,
-                                              ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                          ],
+                            _buildAiInsightsCard(context, _latestAiAnalysis!),
                         ],
                       ),
                     ),
@@ -903,6 +732,129 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
     );
   }
 
+  Widget _buildAiInsightsCard(
+    BuildContext context,
+    IncidentAiAnalysisModel analysis,
+  ) {
+    final hasSummary =
+        analysis.summary != null && analysis.summary!.trim().isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (analysis.confidence != null)
+                _buildSmallTag(
+                  context,
+                  'Confianza: ${(analysis.confidence! * 100).toStringAsFixed(0)}%',
+                  AppColors.info,
+                ),
+              if (analysis.category != null &&
+                  analysis.category!.trim().isNotEmpty)
+                _buildSmallTag(
+                  context,
+                  'Categoría: ${analysis.category}',
+                  AppColors.primary,
+                ),
+              _buildSmallTag(
+                context,
+                analysis.isAmbiguous ? 'Caso ambiguo' : 'Caso claro',
+                analysis.isAmbiguous ? AppColors.warning : AppColors.success,
+              ),
+            ],
+          ),
+          if (hasSummary) ...[
+            const SizedBox(height: 12),
+            Text(
+              analysis.summary!,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AppColors.textMain,
+                height: 1.5,
+              ),
+            ),
+          ],
+          if (analysis.findings.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Hallazgos relevantes',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppColors.textMain,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _buildBulletList(context, analysis.findings.take(4).toList()),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallTag(BuildContext context, String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBulletList(BuildContext context, List<String> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items
+          .map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Icon(
+                      Icons.circle,
+                      size: 6,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textMain,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
   Widget _buildTimelineItem(
     BuildContext context,
     String label,
@@ -994,36 +946,6 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         return AppColors.info;
       default:
         return AppColors.textMuted;
-    }
-  }
-
-  Color _getAiStatusColor(String status) {
-    switch (status) {
-      case 'pending':
-        return AppColors.warning;
-      case 'processing':
-        return AppColors.primary;
-      case 'completed':
-        return AppColors.success;
-      case 'failed':
-        return AppColors.error;
-      default:
-        return AppColors.textMuted;
-    }
-  }
-
-  IconData _getAiStatusIcon(String status) {
-    switch (status) {
-      case 'pending':
-        return Icons.schedule_outlined;
-      case 'processing':
-        return Icons.autorenew_outlined;
-      case 'completed':
-        return Icons.check_circle_outline;
-      case 'failed':
-        return Icons.error_outline;
-      default:
-        return Icons.help_outline;
     }
   }
 

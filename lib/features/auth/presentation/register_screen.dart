@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../core/config/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/app_logo.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
@@ -187,6 +189,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Center(
+                    child: Hero(tag: 'app_logo', child: AppLogo(size: 84)),
+                  ),
+
+                  const SizedBox(height: 20),
+
                   // Header
                   Text(
                     'Registro de Cliente',
@@ -199,7 +207,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                   const SizedBox(height: 8),
 
                   Text(
-                    'Completa tus datos para crear tu cuenta',
+                    'Completa tus datos para crear tu cuenta en ${AppConstants.appName}',
                     style: Theme.of(
                       context,
                     ).textTheme.bodyLarge?.copyWith(color: AppColors.textMuted),

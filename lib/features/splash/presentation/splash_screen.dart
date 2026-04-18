@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/config/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/app_logo.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -105,26 +107,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 opacity: _fadeAnimation,
                 child: ScaleTransition(
                   scale: _scaleAnimation,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          blurRadius: 30,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.construction,
-                      size: 64,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child: const AppLogo(size: 120),
                 ),
               ),
 
@@ -136,7 +119,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 child: FadeTransition(
                   opacity: _fadeAnimation,
                   child: Text(
-                    'MecánicoYa',
+                    AppConstants.appName,
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.textMain,

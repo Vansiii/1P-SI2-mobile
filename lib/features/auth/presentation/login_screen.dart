@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/config/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/app_logo.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
@@ -410,35 +412,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         // Logo con animación
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
-                          height: keyboardVisible ? 60 : 100,
-                          child: Hero(
-                            tag: 'app_logo',
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    AppColors.primary,
-                                    AppColors.primary.withValues(alpha: 0.7),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.3,
-                                    ),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.build_circle,
-                                size: 50,
-                                color: Colors.white,
-                              ),
+                          height: keyboardVisible ? 72 : 118,
+                          child: Center(
+                            child: Hero(
+                              tag: 'app_logo',
+                              child: AppLogo(size: keyboardVisible ? 64 : 104),
                             ),
                           ),
                         ),
@@ -447,7 +425,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         // Título
                         Text(
-                          '¡Bienvenido!',
+                          '¡Bienvenido a ${AppConstants.appName}!',
                           style: Theme.of(context).textTheme.displayMedium
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,

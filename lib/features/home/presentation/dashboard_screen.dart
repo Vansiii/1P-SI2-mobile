@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/core/config/app_constants.dart';
 import 'package:merchanic_repair/core/widgets/exit_app_dialog.dart';
+import 'package:merchanic_repair/shared/widgets/app_logo.dart';
 import 'package:merchanic_repair/features/auth/providers/auth_provider.dart';
 import 'package:merchanic_repair/features/admin/permissions_screen.dart';
 import 'package:merchanic_repair/features/incidents/providers/incident_provider.dart';
@@ -131,18 +132,39 @@ class DashboardScreen extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: AppColors.surface,
           elevation: 0,
+          titleSpacing: 0,
           leading: Builder(
             builder: (context) => IconButton(
               icon: const Icon(Icons.menu, color: AppColors.textMain),
               onPressed: () => Scaffold.of(context).openDrawer(),
             ),
           ),
-          title: const Text(
-            'Inicio',
-            style: TextStyle(
-              color: AppColors.textMain,
-              fontWeight: FontWeight.w600,
-            ),
+          title: Row(
+            children: [
+              const AppLogo(size: 30, withBackground: true, withShadow: false),
+              const SizedBox(width: 10),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    AppConstants.appName,
+                    style: TextStyle(
+                      color: AppColors.textMain,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    'Inicio',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           actions: [
             IconButton(
@@ -673,10 +695,10 @@ class DashboardScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  child: const Icon(
-                    Icons.person,
-                    color: AppColors.primary,
-                    size: 40,
+                  child: const AppLogo(
+                    size: 68,
+                    withBackground: false,
+                    withShadow: false,
                   ),
                 ),
                 const SizedBox(height: 16),

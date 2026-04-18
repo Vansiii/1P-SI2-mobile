@@ -3,6 +3,7 @@ class AppConstants {
   // App Info
   static const String appName = 'MecánicoYa';
   static const String appVersion = '1.0.0';
+  static const String appLogoAsset = 'assets/images/logo.png';
 
   // Storage Keys
   static const String accessTokenKey = 'access_token';
