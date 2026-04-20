@@ -4,6 +4,8 @@ import '../../../data/models/user_model.dart';
 import '../../../data/repositories/auth_repository.dart';
 import '../../../data/services/api_service.dart';
 import '../../../data/services/storage_service.dart';
+import '../../../services/technician_location_service.dart';
+import 'push_token_provider.dart';
 
 // Providers
 final storageServiceProvider = Provider((ref) => StorageService());
@@ -17,6 +19,11 @@ final authRepositoryProvider = Provider((ref) {
   final apiService = ref.watch(apiServiceProvider);
   final storageService = ref.watch(storageServiceProvider);
   return AuthRepository(apiService, storageService);
+});
+
+final technicianLocationServiceProvider = Provider((ref) {
+  final apiService = ref.watch(apiServiceProvider);
+  return TechnicianLocationService(apiService);
 });
 
 // Auth State
@@ -52,9 +59,15 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _authRepository;
   final StorageService _storageService;
+  final TechnicianLocationService _locationService;
+  final Ref _ref;
 
-  AuthNotifier(this._authRepository, this._storageService)
-    : super(AuthState()) {
+  AuthNotifier(
+    this._authRepository,
+    this._storageService,
+    this._locationService,
+    this._ref,
+  ) : super(AuthState()) {
     _checkAuthStatus();
   }
 
@@ -146,17 +159,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // Método privado para autenticar usuario y obtener perfil completo
   Future<void> _authenticateUser(AuthResponse response) async {
-    // Validar que el usuario sea de tipo permitido en app móvil
-    // Permitidos: client (clientes), technician (mecánicos), administrator (admins)
-    // No permitido: workshop (talleres - solo web)
-    final allowedTypes = ['client', 'technician', 'administrator', 'admin'];
+    // VALIDACIÓN: Clientes y técnicos pueden usar la app móvil
+    final allowedTypes = ['client', 'technician'];
     if (response.user?.userType != null &&
         !allowedTypes.contains(response.user!.userType)) {
       if (mounted) {
         state = state.copyWith(isLoading: false);
       }
       throw Exception(
-        'Este tipo de usuario no tiene acceso a la aplicación móvil. Por favor, usa la plataforma web.',
+        'Esta aplicación es para clientes y técnicos. '
+        'Si eres administrador o taller, por favor usa la plataforma web.',
       );
     }
 
@@ -172,6 +184,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoading: false,
         );
       }
+
+      // Si el usuario es técnico, iniciar seguimiento de ubicación
+      if (fullUser.userType == 'technician') {
+        await _startTechnicianLocationTracking();
+      }
+
+      // Registrar token FCM después del login exitoso
+      await _registerPushToken();
     } catch (profileError) {
       // Si falla obtener el perfil, usar los datos básicos de la respuesta
 
@@ -182,6 +202,54 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoading: false,
         );
       }
+
+      // Si el usuario es técnico, iniciar seguimiento de ubicación
+      if (response.user?.userType == 'technician') {
+        await _startTechnicianLocationTracking();
+      }
+
+      // Registrar token FCM después del login exitoso
+      await _registerPushToken();
+    }
+  }
+
+  // Iniciar seguimiento de ubicación para técnicos
+  Future<void> _startTechnicianLocationTracking() async {
+    try {
+      print(
+        '🚀 AuthNotifier: Intentando iniciar seguimiento de ubicación para técnico',
+      );
+      final success = await _locationService.startContinuousTracking();
+      if (success) {
+        print('✅ AuthNotifier: Seguimiento de ubicación iniciado para técnico');
+      } else {
+        print('❌ AuthNotifier: No se pudo iniciar seguimiento de ubicación');
+      }
+    } catch (e) {
+      print('❌ AuthNotifier: Error al iniciar seguimiento de ubicación: $e');
+      print('Stack trace: ${StackTrace.current}');
+    }
+  }
+
+  // Registrar token FCM después del login
+  Future<void> _registerPushToken() async {
+    try {
+      final pushTokenManager = _ref.read(pushTokenManagerProvider);
+      await pushTokenManager.registerTokenAfterLogin();
+    } catch (e) {
+      print('❌ AuthNotifier: Error registrando token FCM: $e');
+      // No lanzar error para no interrumpir el flujo de login
+    }
+  }
+
+  // Desregistrar tokens FCM antes del logout
+  Future<void> _unregisterPushTokens() async {
+    try {
+      final pushTokenManager = _ref.read(pushTokenManagerProvider);
+      await pushTokenManager.unregisterAllTokensOnLogout();
+    } catch (e) {
+      print('❌ AuthNotifier: Error desregistrando tokens FCM: $e');
+      // No lanzar error para no interrumpir el flujo de logout
     }
   }
 
@@ -237,6 +305,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     try {
+      // Desregistrar tokens FCM antes del logout
+      await _unregisterPushTokens();
+
+      // Detener seguimiento de ubicación si está activo
+      if (_locationService.isTracking) {
+        await _locationService.stopContinuousTracking();
+        print('AuthNotifier: Seguimiento de ubicación detenido');
+      }
+
       await _authRepository.logout();
       if (mounted) {
         state = AuthState();
@@ -264,5 +341,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authRepository = ref.watch(authRepositoryProvider);
   final storageService = ref.watch(storageServiceProvider);
-  return AuthNotifier(authRepository, storageService);
+  final locationService = ref.watch(technicianLocationServiceProvider);
+  return AuthNotifier(authRepository, storageService, locationService, ref);
 });

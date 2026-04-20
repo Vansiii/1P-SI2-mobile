@@ -59,7 +59,7 @@ class IncidentModel {
       categoriaIa: json['categoria_ia'] as String?,
       prioridadIa: json['prioridad_ia'] as String?,
       resumenIa: json['resumen_ia'] as String?,
-      esAmbiguo: json['es_ambiguo'] as bool,
+      esAmbiguo: json['es_ambiguo'] as bool? ?? false,
       estadoActual: json['estado_actual'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
@@ -94,6 +94,8 @@ class IncidentModel {
         return 'Resuelto';
       case 'cancelado':
         return 'Cancelado';
+      case 'sin_taller_disponible':
+        return 'Sin Taller Disponible';
       default:
         return estadoActual;
     }
@@ -111,7 +113,72 @@ class IncidentModel {
         return 'Sin prioridad';
     }
   }
+
+  /// Returns a copy of this [IncidentModel] with the given fields replaced.
+  IncidentModel copyWith({
+    int? id,
+    int? clientId,
+    int? vehiculoId,
+    Object? tallerId = _sentinel,
+    Object? tecnicoId = _sentinel,
+    double? latitude,
+    double? longitude,
+    Object? direccionReferencia = _sentinel,
+    String? descripcion,
+    Object? categoriaIa = _sentinel,
+    Object? prioridadIa = _sentinel,
+    Object? resumenIa = _sentinel,
+    bool? esAmbiguo,
+    String? estadoActual,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Object? assignedAt = _sentinel,
+    Object? resolvedAt = _sentinel,
+    Object? imagenes = _sentinel,
+    Object? audios = _sentinel,
+  }) {
+    return IncidentModel(
+      id: id ?? this.id,
+      clientId: clientId ?? this.clientId,
+      vehiculoId: vehiculoId ?? this.vehiculoId,
+      tallerId: tallerId == _sentinel ? this.tallerId : tallerId as int?,
+      tecnicoId: tecnicoId == _sentinel ? this.tecnicoId : tecnicoId as int?,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      direccionReferencia: direccionReferencia == _sentinel
+          ? this.direccionReferencia
+          : direccionReferencia as String?,
+      descripcion: descripcion ?? this.descripcion,
+      categoriaIa: categoriaIa == _sentinel
+          ? this.categoriaIa
+          : categoriaIa as String?,
+      prioridadIa: prioridadIa == _sentinel
+          ? this.prioridadIa
+          : prioridadIa as String?,
+      resumenIa: resumenIa == _sentinel ? this.resumenIa : resumenIa as String?,
+      esAmbiguo: esAmbiguo ?? this.esAmbiguo,
+      estadoActual: estadoActual ?? this.estadoActual,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      assignedAt: assignedAt == _sentinel
+          ? this.assignedAt
+          : assignedAt as DateTime?,
+      resolvedAt: resolvedAt == _sentinel
+          ? this.resolvedAt
+          : resolvedAt as DateTime?,
+      imagenes: imagenes == _sentinel
+          ? this.imagenes
+          : imagenes as List<EvidenciaImagen>?,
+      audios: audios == _sentinel
+          ? this.audios
+          : audios as List<EvidenciaAudio>?,
+    );
+  }
 }
+
+/// Sentinel object used by [IncidentModel.copyWith] to distinguish between
+/// "not provided" and an explicitly-passed `null`.
+const Object _sentinel = Object();
 
 class EvidenciaImagen {
   final int id;

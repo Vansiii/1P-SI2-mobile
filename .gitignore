@@ -63,3 +63,11 @@ app.*.map.json
 
 # Keep example file
 !.env.example
+
+# Firebase configuration files - NO COMMITEAR
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# Keep example files
+!android/app/google-services.json.example
+!ios/Runner/GoogleService-Info.plist.example

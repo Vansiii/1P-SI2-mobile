@@ -8,6 +8,8 @@ import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/widgets/logout_dialog.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../services/push_notification_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -230,6 +232,52 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                     ],
 
+                    // Técnico específico
+                    if (user.userType == AppConstants.userTypeTechnician) ...[
+                      const Divider(height: 24),
+                      _buildInfoRow(
+                        context,
+                        icon: Icons.business_outlined,
+                        label: 'Taller asignado',
+                        value: user.workshopName ?? 'Sin asignar',
+                      ),
+                      const Divider(height: 24),
+                      _buildInfoRow(
+                        context,
+                        icon: Icons.work_outline,
+                        label: 'Estado de disponibilidad',
+                        value: user.isAvailable == true
+                            ? 'Disponible'
+                            : 'No disponible',
+                        valueColor: user.isAvailable == true
+                            ? AppColors.success
+                            : AppColors.warning,
+                      ),
+                      const Divider(height: 24),
+                      _buildInfoRow(
+                        context,
+                        icon: Icons.online_prediction,
+                        label: 'Estado de conexión',
+                        value: user.isOnline == true
+                            ? 'En línea'
+                            : 'Desconectado',
+                        valueColor: user.isOnline == true
+                            ? AppColors.success
+                            : AppColors.textMuted,
+                      ),
+                      if (user.lastSeenAt != null) ...[
+                        const Divider(height: 24),
+                        _buildInfoRow(
+                          context,
+                          icon: Icons.access_time,
+                          label: 'Última conexión',
+                          value: DateFormat(
+                            'dd/MM/yyyy HH:mm',
+                          ).format(user.lastSeenAt!),
+                        ),
+                      ],
+                    ],
+
                     // Administrador específico
                     if (user.userType == AppConstants.userTypeAdmin) ...[
                       const Divider(height: 24),
@@ -314,6 +362,38 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
             ),
+
+            const SizedBox(height: 24),
+
+            // Security Button
+            Card(
+              child: ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.security, color: AppColors.primary),
+                ),
+                title: const Text('Seguridad'),
+                subtitle: const Text('Contraseña, 2FA y más'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  context.pushNamed('security');
+                },
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Notification Settings Button
+            _NotificationSettingsCard(),
+
+            const SizedBox(height: 16),
+
+            // Camera Permission Card
+            _CameraPermissionCard(),
 
             const SizedBox(height: 24),
 
@@ -404,6 +484,353 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Widget para gestionar permisos de notificaciones
+class _NotificationSettingsCard extends StatefulWidget {
+  @override
+  State<_NotificationSettingsCard> createState() =>
+      _NotificationSettingsCardState();
+}
+
+class _NotificationSettingsCardState extends State<_NotificationSettingsCard> {
+  bool _isChecking = true;
+  bool _notificationsEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkNotificationStatus();
+  }
+
+  Future<void> _checkNotificationStatus() async {
+    setState(() => _isChecking = true);
+    try {
+      final enabled = await PushNotificationService().areNotificationsEnabled();
+      if (mounted) {
+        setState(() {
+          _notificationsEnabled = enabled;
+          _isChecking = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking notification status: $e');
+      if (mounted) {
+        setState(() => _isChecking = false);
+      }
+    }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    try {
+      // Solicitar permiso
+      final status = await Permission.notification.request();
+
+      if (status.isGranted) {
+        // Reinicializar el servicio de notificaciones para obtener el token
+        await PushNotificationService().initialize();
+
+        if (mounted) {
+          SnackBarUtils.showSuccess(
+            context,
+            'Notificaciones habilitadas correctamente',
+          );
+          _checkNotificationStatus();
+        }
+      } else if (status.isPermanentlyDenied) {
+        if (mounted) {
+          _showOpenSettingsDialog();
+        }
+      } else {
+        if (mounted) {
+          SnackBarUtils.showError(
+            context,
+            'Permiso de notificaciones denegado',
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error requesting notification permission: $e');
+      if (mounted) {
+        SnackBarUtils.showError(context, 'Error al solicitar permisos: $e');
+      }
+    }
+  }
+
+  void _showOpenSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permisos de notificaciones'),
+        content: const Text(
+          'Los permisos de notificaciones están deshabilitados. '
+          'Para habilitarlos, ve a la configuración de la aplicación.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await openAppSettings();
+              // Esperar un poco y verificar de nuevo
+              await Future.delayed(const Duration(seconds: 1));
+              _checkNotificationStatus();
+            },
+            child: const Text('Abrir configuración'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: _notificationsEnabled
+                ? AppColors.success.withValues(alpha: 0.1)
+                : AppColors.warning.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            _notificationsEnabled
+                ? Icons.notifications_active
+                : Icons.notifications_off,
+            color: _notificationsEnabled
+                ? AppColors.success
+                : AppColors.warning,
+          ),
+        ),
+        title: const Text('Notificaciones Push'),
+        subtitle: _isChecking
+            ? const Text('Verificando...')
+            : Text(
+                _notificationsEnabled
+                    ? 'Habilitadas'
+                    : 'Deshabilitadas - Toca para habilitar',
+              ),
+        trailing: _isChecking
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(
+                _notificationsEnabled
+                    ? Icons.check_circle
+                    : Icons.chevron_right,
+                color: _notificationsEnabled ? AppColors.success : null,
+              ),
+        onTap: _isChecking || _notificationsEnabled
+            ? null
+            : _requestNotificationPermission,
+      ),
+    );
+  }
+}
+
+/// Widget para gestionar permisos de cámara
+class _CameraPermissionCard extends StatefulWidget {
+  @override
+  State<_CameraPermissionCard> createState() => _CameraPermissionCardState();
+}
+
+class _CameraPermissionCardState extends State<_CameraPermissionCard> {
+  bool _isChecking = true;
+  bool _cameraEnabled = false;
+  bool _photosEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissionStatus();
+  }
+
+  Future<void> _checkPermissionStatus() async {
+    setState(() => _isChecking = true);
+    try {
+      final cameraStatus = await Permission.camera.status;
+      final photosStatus = await Permission.photos.status;
+
+      if (mounted) {
+        setState(() {
+          _cameraEnabled = cameraStatus.isGranted;
+          _photosEnabled = photosStatus.isGranted;
+          _isChecking = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking camera permission status: $e');
+      if (mounted) {
+        setState(() => _isChecking = false);
+      }
+    }
+  }
+
+  Future<void> _requestCameraPermission() async {
+    try {
+      final status = await Permission.camera.request();
+
+      if (status.isGranted) {
+        if (mounted) {
+          SnackBarUtils.showSuccess(context, 'Permiso de cámara habilitado');
+          _checkPermissionStatus();
+        }
+      } else if (status.isPermanentlyDenied) {
+        if (mounted) {
+          _showOpenSettingsDialog('cámara');
+        }
+      } else {
+        if (mounted) {
+          SnackBarUtils.showError(context, 'Permiso de cámara denegado');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error requesting camera permission: $e');
+      if (mounted) {
+        SnackBarUtils.showError(context, 'Error al solicitar permisos: $e');
+      }
+    }
+  }
+
+  Future<void> _requestPhotosPermission() async {
+    try {
+      final status = await Permission.photos.request();
+
+      if (status.isGranted) {
+        if (mounted) {
+          SnackBarUtils.showSuccess(context, 'Permiso de galería habilitado');
+          _checkPermissionStatus();
+        }
+      } else if (status.isPermanentlyDenied) {
+        if (mounted) {
+          _showOpenSettingsDialog('galería');
+        }
+      } else {
+        if (mounted) {
+          SnackBarUtils.showError(context, 'Permiso de galería denegado');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error requesting photos permission: $e');
+      if (mounted) {
+        SnackBarUtils.showError(context, 'Error al solicitar permisos: $e');
+      }
+    }
+  }
+
+  void _showOpenSettingsDialog(String permissionName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Permisos de $permissionName'),
+        content: Text(
+          'Los permisos de $permissionName están deshabilitados. '
+          'Para habilitarlos, ve a la configuración de la aplicación.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await openAppSettings();
+              await Future.delayed(const Duration(seconds: 1));
+              _checkPermissionStatus();
+            },
+            child: const Text('Abrir configuración'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allEnabled = _cameraEnabled && _photosEnabled;
+    final someEnabled = _cameraEnabled || _photosEnabled;
+
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: allEnabled
+                    ? AppColors.success.withValues(alpha: 0.1)
+                    : someEnabled
+                    ? AppColors.warning.withValues(alpha: 0.1)
+                    : AppColors.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                allEnabled
+                    ? Icons.camera_alt
+                    : someEnabled
+                    ? Icons.camera_alt_outlined
+                    : Icons.no_photography,
+                color: allEnabled
+                    ? AppColors.success
+                    : someEnabled
+                    ? AppColors.warning
+                    : AppColors.error,
+              ),
+            ),
+            title: const Text('Permisos de Cámara y Fotos'),
+            subtitle: _isChecking
+                ? const Text('Verificando...')
+                : Text(
+                    allEnabled
+                        ? 'Todos los permisos habilitados'
+                        : someEnabled
+                        ? 'Algunos permisos deshabilitados'
+                        : 'Permisos deshabilitados',
+                  ),
+            trailing: _isChecking
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    allEnabled ? Icons.check_circle : Icons.chevron_right,
+                    color: allEnabled ? AppColors.success : null,
+                  ),
+          ),
+          if (!_isChecking && !allEnabled) ...[
+            const Divider(height: 1),
+            if (!_cameraEnabled)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.camera_alt_outlined, size: 20),
+                title: const Text('Cámara'),
+                subtitle: const Text('Toca para habilitar'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: _requestCameraPermission,
+              ),
+            if (!_photosEnabled)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.photo_library_outlined, size: 20),
+                title: const Text('Galería de fotos'),
+                subtitle: const Text('Toca para habilitar'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: _requestPhotosPermission,
+              ),
+          ],
+        ],
+      ),
     );
   }
 }

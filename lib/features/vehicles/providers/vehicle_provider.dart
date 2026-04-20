@@ -1,6 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../data/models/vehicle_model.dart';
-import '../data/repositories/vehicle_repository.dart';
+import 'package:merchanic_repair/features/vehicles/data/models/vehicle_model.dart';
+import 'package:merchanic_repair/features/vehicles/data/repositories/vehicle_repository.dart';
 
 final vehicleRepositoryProvider = Provider((ref) => VehicleRepository());
 
@@ -91,5 +92,97 @@ class VehiclesNotifier extends StateNotifier<AsyncValue<List<VehicleModel>>> {
 
   Future<Map<String, dynamic>> getVehicleHistory(int vehicleId) async {
     return await _repository.getVehicleHistory(vehicleId);
+  }
+
+  // ── WebSocket-driven update methods ───────────────────────────────────────
+  // These methods apply incremental updates received via WebSocket events
+  // without triggering an HTTP reload, keeping the UI in sync in real-time.
+
+  /// Prepends [vehicle] to the current list.
+  ///
+  /// Called by the WebSocket layer when a `vehicle_created` event is received.
+  void addVehicleFromWebSocket(VehicleModel vehicle) {
+    state.whenData((vehicles) {
+      state = AsyncValue.data([vehicle, ...vehicles]);
+      debugPrint(
+        '[VehiclesNotifier] addVehicleFromWebSocket: id=${vehicle.id}',
+      );
+    });
+  }
+
+  /// Merges [updatedFields] into the vehicle identified by [vehicleId].
+  ///
+  /// Called by the WebSocket layer when a `vehicle_updated` event is received.
+  void updateVehicleFromWebSocket(
+    int vehicleId,
+    Map<String, dynamic> updatedFields,
+  ) {
+    state.whenData((vehicles) {
+      state = AsyncValue.data(
+        vehicles.map((v) {
+          if (v.id != vehicleId) return v;
+          return v.copyWith(
+            matricula: updatedFields['matricula'] as String? ?? v.matricula,
+            marca: updatedFields.containsKey('marca')
+                ? updatedFields['marca'] as String?
+                : v.marca,
+            modelo: updatedFields['modelo'] as String? ?? v.modelo,
+            anio: updatedFields.containsKey('anio')
+                ? updatedFields['anio'] as int? ?? v.anio
+                : v.anio,
+            color: updatedFields.containsKey('color')
+                ? updatedFields['color'] as String?
+                : v.color,
+            imagen: updatedFields.containsKey('imagen')
+                ? updatedFields['imagen'] as String?
+                : v.imagen,
+            isActive: updatedFields.containsKey('is_active')
+                ? updatedFields['is_active'] as bool? ?? v.isActive
+                : v.isActive,
+            updatedAt:
+                updatedFields.containsKey('updated_at') &&
+                    updatedFields['updated_at'] != null
+                ? DateTime.parse(updatedFields['updated_at'] as String).toUtc()
+                : v.updatedAt,
+          );
+        }).toList(),
+      );
+      debugPrint(
+        '[VehiclesNotifier] updateVehicleFromWebSocket: id=$vehicleId',
+      );
+    });
+  }
+
+  /// Removes the vehicle identified by [vehicleId] from the list.
+  ///
+  /// Called by the WebSocket layer when a `vehicle_deleted` event is received.
+  void removeVehicleFromWebSocket(int vehicleId) {
+    state.whenData((vehicles) {
+      state = AsyncValue.data(
+        vehicles.where((v) => v.id != vehicleId).toList(),
+      );
+      debugPrint(
+        '[VehiclesNotifier] removeVehicleFromWebSocket: id=$vehicleId',
+      );
+    });
+  }
+
+  /// Updates the [VehicleModel.imagen] field for the vehicle identified by
+  /// [vehicleId].
+  ///
+  /// Called by the WebSocket layer when a `vehicle_image_uploaded` event is
+  /// received.
+  void updateVehicleImageFromWebSocket(int vehicleId, String imageUrl) {
+    state.whenData((vehicles) {
+      state = AsyncValue.data(
+        vehicles.map((v) {
+          if (v.id != vehicleId) return v;
+          return v.copyWith(imagen: imageUrl);
+        }).toList(),
+      );
+      debugPrint(
+        '[VehiclesNotifier] updateVehicleImageFromWebSocket: id=$vehicleId',
+      );
+    });
   }
 }

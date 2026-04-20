@@ -5,6 +5,14 @@ class ApiConfig {
   // Base URL - Se obtiene dinámicamente del entorno configurado
   static String get baseUrl => EnvironmentConfig.current.apiBaseUrl;
 
+  // WebSocket URL - Convertir HTTP a WS
+  static String get wsUrl {
+    final url = baseUrl
+        .replaceFirst('http://', 'ws://')
+        .replaceFirst('https://', 'wss://');
+    return url;
+  }
+
   // Logging - Habilitado solo en desarrollo
   static bool get enableLogging => EnvironmentConfig.current.enableLogging;
 
@@ -16,7 +24,7 @@ class ApiConfig {
 
   static const String apiVersion = '/api/v1';
 
-  // Endpoints
+  // HTTP Endpoints
   static const String auth = '$apiVersion/auth';
   static const String password = '$apiVersion/password';
   static const String twoFactor = '$apiVersion/2fa';
@@ -26,6 +34,12 @@ class ApiConfig {
   static const String health = '$apiVersion/health';
   static const String vehiculos = '$apiVersion/vehiculos';
   static const String incidentes = '$apiVersion/incidentes';
+  static const String chat = '$apiVersion/chat';
+  static const String cancellation = '$apiVersion/cancellation';
+
+  // WebSocket Endpoints
+  static const String wsIncidents = '$apiVersion/ws/incidents';
+  static const String wsTracking = '$apiVersion/ws/tracking';
 
   // Headers
   static const Map<String, String> defaultHeaders = {

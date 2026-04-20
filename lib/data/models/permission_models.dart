@@ -41,7 +41,7 @@ class RoleInfo {
       value: json['value'] as String,
       description: json['description'] as String,
       permissionCount: json['permission_count'] as int,
-      canModify: json['can_modify'] as bool,
+      canModify: json['can_modify'] as bool? ?? false,
     );
   }
 }

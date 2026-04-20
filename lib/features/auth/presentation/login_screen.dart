@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../../core/config/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_logo.dart';
 import '../../../shared/widgets/custom_text_field.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/validators/form_validators.dart';
 import '../providers/auth_provider.dart';
+import '../../../screens/location_permission_screen.dart';
 
 const String _loginLockoutUntilKey = 'auth_login_lockout_until';
 
@@ -150,6 +150,62 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return '$minutes:$seconds';
   }
 
+  void _navigateToHome() {
+    if (!mounted) return;
+
+    final navigator = GoRouter.of(context);
+    navigator.go('/home');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            SizedBox(width: 12),
+            Text('¡Bienvenido de vuelta!'),
+          ],
+        ),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showLocationWarning() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.white, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'El seguimiento de ubicación no está activo. '
+                'El taller no podrá ver tu ubicación en tiempo real.',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.warning,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Activar',
+          textColor: Colors.white,
+          onPressed: () async {
+            final locationService = ref.read(technicianLocationServiceProvider);
+            await locationService.openLocationSettings();
+          },
+        ),
+      ),
+    );
+  }
+
   Map<String, dynamic>? _extractLockoutInfo(dynamic error) {
     // Intentar extraer información de bloqueo del error
     if (error is Exception) {
@@ -281,26 +337,46 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         }
       } else {
         if (mounted) {
-          final navigator = GoRouter.of(context);
-          navigator.go('/home');
+          // Verificar si el usuario es técnico para solicitar permisos de ubicación
+          final authState = ref.read(authProvider);
+          final isTechnician = authState.user?.userType == 'technician';
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white, size: 20),
-                  SizedBox(width: 12),
-                  Text('¡Bienvenido de vuelta!'),
-                ],
-              ),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          debugPrint('LoginScreen: Usuario es técnico: $isTechnician');
+
+          if (isTechnician) {
+            // Verificar permisos de ubicación
+            final locationService = ref.read(technicianLocationServiceProvider);
+            final hasPermission = await locationService
+                .checkAndRequestPermissions();
+
+            debugPrint('LoginScreen: Tiene permisos: $hasPermission');
+
+            if (!hasPermission) {
+              // Mostrar pantalla de permisos
+              if (mounted) {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => LocationPermissionScreen(
+                      onPermissionGranted: () {
+                        Navigator.of(context).pop();
+                        _navigateToHome();
+                      },
+                      onSkip: () {
+                        Navigator.of(context).pop();
+                        _navigateToHome();
+                        _showLocationWarning();
+                      },
+                    ),
+                  ),
+                );
+                return; // No navegar automáticamente
+              }
+            } else {
+              _navigateToHome();
+            }
+          } else {
+            _navigateToHome();
+          }
         }
       }
     } catch (e) {
@@ -425,7 +501,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         // Título
                         Text(
-                          '¡Bienvenido a ${AppConstants.appName}!',
+                          '¡Bienvenido!',
                           style: Theme.of(context).textTheme.displayMedium
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
@@ -437,7 +513,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         const SizedBox(height: 8),
 
                         Text(
-                          'Inicia sesión para continuar',
+                          'Inicia sesión para acceder a la plataforma',
                           style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(color: AppColors.textMuted),
                           textAlign: TextAlign.center,
@@ -608,7 +684,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 horizontal: 16,
                               ),
                               child: Text(
-                                'o',
+                                'Para clientes y técnicos',
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: AppColors.textMuted),
                               ),
@@ -619,7 +695,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                         const SizedBox(height: 24),
 
-                        // Register link con animación
+                        // Info message
                         TweenAnimationBuilder<double>(
                           tween: Tween(begin: 0.0, end: 1.0),
                           duration: const Duration(milliseconds: 900),
@@ -627,26 +703,68 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           builder: (context, value, child) {
                             return Opacity(opacity: value, child: child);
                           },
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.info.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.info.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: AppColors.info,
+                                  size: 24,
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    'Accede como cliente para solicitar servicios o como técnico para trabajar.',
+                                    style: TextStyle(
+                                      color: AppColors.info,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Create account button
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 1000),
+                          curve: Curves.easeOut,
+                          builder: (context, value, child) {
+                            return Transform.translate(
+                              offset: Offset(0, 20 * (1 - value)),
+                              child: Opacity(opacity: value, child: child),
+                            );
+                          },
                           child: OutlinedButton(
                             onPressed: () {
                               context.pushNamed('register');
                             },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.primary,
-                              side: const BorderSide(
-                                color: AppColors.primary,
-                                width: 2,
-                              ),
+                              side: BorderSide(color: AppColors.primary),
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             child: const Text(
-                              'Crear cuenta nueva',
+                              'Crear cuenta de cliente',
                               style: TextStyle(
-                                fontSize: 16,
                                 fontWeight: FontWeight.w600,
+                                fontSize: 16,
                               ),
                             ),
                           ),

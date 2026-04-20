@@ -84,8 +84,24 @@ dependencies:
   # Permission Handler (para solicitar permisos)
   permission_handler: ^11.3.1
   
+  # WebSocket (para comunicación en tiempo real)
+  web_socket_channel: ^2.4.0
+  
   # Environment Variables
   flutter_dotenv: ^5.2.1
+  
+  # Firebase
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.5
+  firebase_crashlytics: ^4.1.3
+  firebase_performance: ^0.10.0
+  flutter_local_notifications: ^18.0.1
+  
+  # Device Info
+  device_info_plus: ^11.2.0
+
+  # JSON Serialization (code generation)
+  json_serializable: ^6.8.0
 
 dev_dependencies:
   flutter_test:
@@ -98,6 +114,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
+  build_runner: ^2.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
