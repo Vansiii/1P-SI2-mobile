@@ -191,6 +191,50 @@ class AuthRepository {
     }
   }
 
+  /// Refresh access token using refresh token
+  Future<String?> refreshAccessToken() async {
+    try {
+      print('🔄 Refreshing access token...');
+      final refreshToken = await _storageService.getRefreshToken();
+
+      if (refreshToken == null || refreshToken.isEmpty) {
+        print('❌ No refresh token available');
+        return null;
+      }
+
+      final response = await _apiService.post(
+        '${ApiConfig.auth}/tokens/refresh',
+        data: {'refresh_token': refreshToken},
+      );
+
+      final newAccessToken = response['data']['access_token'] as String;
+      final newRefreshToken = response['data']['refresh_token'] as String?;
+
+      // Save new tokens
+      await _storageService.saveTokens(
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken ?? refreshToken,
+      );
+
+      print('✅ Access token refreshed successfully');
+      return newAccessToken;
+    } on DioException catch (e) {
+      print('❌ Failed to refresh token: ${e.response?.statusCode}');
+      print('📛 Error data: ${e.response?.data}');
+
+      // If refresh fails with 401, the refresh token is invalid
+      if (e.response?.statusCode == 401) {
+        print('🚫 Refresh token expired or invalid - clearing storage');
+        await _storageService.clearAll();
+      }
+
+      return null;
+    } catch (e) {
+      print('❌ Unexpected error refreshing token: $e');
+      return null;
+    }
+  }
+
   /// Solicitar recuperación de contraseña (móvil con OTP)
   Future<String> forgotPasswordMobile(String email) async {
     try {
@@ -398,4 +442,3 @@ class AuthRepository {
     return 'Error de red. Intenta nuevamente.';
   }
 }
-

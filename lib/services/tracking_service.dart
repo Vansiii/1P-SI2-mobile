@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show sqrt, pow, sin, cos, atan2, pi;
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:merchanic_repair/data/services/api_service.dart';
@@ -7,14 +8,21 @@ import 'package:merchanic_repair/data/services/api_service.dart';
 class TrackingService {
   final ApiService _apiService;
   Timer? _locationTimer;
+  Timer? _batchTimer;
   bool _isTracking = false;
   int? _currentSessionId;
   int? _currentIncidentId;
 
   // Configuración de tracking
-  static const Duration _updateInterval = Duration(seconds: 30);
-  static const LocationAccuracy _accuracy = LocationAccuracy.high;
-  static const double _minDistanceFilter = 10.0; // metros
+  static const Duration _updateInterval = Duration(seconds: 5);
+  static const Duration _batchInterval = Duration(seconds: 15);
+  static const double _minDistanceMeters = 10.0; // metros mínimos para enviar
+  static const int _maxBatchSize = 5; // máximo de ubicaciones por batch
+
+  // Estado de throttling
+  DateTime? _lastLocationSent;
+  Position? _lastLocationCoordinates;
+  final List<Map<String, dynamic>> _locationBuffer = [];
 
   TrackingService(this._apiService);
 
@@ -56,10 +64,17 @@ class TrackingService {
       // Enviar ubicación inicial inmediatamente
       await _sendCurrentLocation();
 
-      // Configurar timer para enviar ubicación periódicamente
+      // Configurar timer para capturar ubicación periódicamente (cada 5s)
       _locationTimer = Timer.periodic(_updateInterval, (timer) async {
         if (_isTracking) {
-          await _sendCurrentLocation();
+          await _captureLocation();
+        }
+      });
+
+      // Configurar timer para enviar batch periódicamente (cada 15s)
+      _batchTimer = Timer.periodic(_batchInterval, (timer) async {
+        if (_isTracking && _locationBuffer.isNotEmpty) {
+          await _sendBatch();
         }
       });
     } catch (e) {
@@ -76,9 +91,16 @@ class TrackingService {
     }
 
     try {
-      // Cancelar timer
+      // Enviar batch pendiente antes de detener
+      if (_locationBuffer.isNotEmpty) {
+        await _sendBatch();
+      }
+
+      // Cancelar timers
       _locationTimer?.cancel();
       _locationTimer = null;
+      _batchTimer?.cancel();
+      _batchTimer = null;
 
       // Detener sesión en el backend
       if (_currentSessionId != null) {
@@ -90,6 +112,9 @@ class TrackingService {
       _isTracking = false;
       _currentSessionId = null;
       _currentIncidentId = null;
+      _lastLocationSent = null;
+      _lastLocationCoordinates = null;
+      _locationBuffer.clear();
 
       debugPrint('Sesión de tracking detenida');
     } catch (e) {
@@ -98,11 +123,163 @@ class TrackingService {
     }
   }
 
-  /// Enviar ubicación actual al backend
+  /// Capturar ubicación actual y agregarla al buffer si cumple criterios
+  Future<void> _captureLocation() async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 0, // Capturamos todas las ubicaciones
+        ),
+      );
+
+      // Filtrar ubicaciones con baja precisión
+      if (position.accuracy > 50.0) {
+        debugPrint(
+          'Ubicación ignorada por baja precisión: ${position.accuracy}m',
+        );
+        return;
+      }
+
+      // Verificar si debemos enviar esta ubicación (throttling)
+      if (!_shouldSendLocation(position)) {
+        debugPrint(
+          'Ubicación throttled: distancia < $_minDistanceMeters m o tiempo < 5s',
+        );
+        return;
+      }
+
+      // Agregar al buffer
+      _addToBuffer(position);
+
+      // Si el buffer está lleno, enviar inmediatamente
+      if (_locationBuffer.length >= _maxBatchSize) {
+        await _sendBatch();
+      }
+    } catch (e) {
+      debugPrint('Error al capturar ubicación: $e');
+      // No lanzar excepción para no interrumpir el tracking
+    }
+  }
+
+  /// Verificar si debemos enviar esta ubicación (throttling)
+  bool _shouldSendLocation(Position newPosition) {
+    // Si es la primera ubicación, siempre enviar
+    if (_lastLocationSent == null || _lastLocationCoordinates == null) {
+      return true;
+    }
+
+    // Verificar tiempo transcurrido (mínimo 5 segundos)
+    final timeSinceLastSent = DateTime.now().difference(_lastLocationSent!);
+    if (timeSinceLastSent.inSeconds < 5) {
+      return false;
+    }
+
+    // Calcular distancia desde última ubicación enviada
+    final distance = _calculateDistance(
+      _lastLocationCoordinates!.latitude,
+      _lastLocationCoordinates!.longitude,
+      newPosition.latitude,
+      newPosition.longitude,
+    );
+
+    // Enviar si la distancia es mayor a 10 metros
+    return distance >= _minDistanceMeters;
+  }
+
+  /// Calcular distancia entre dos coordenadas (fórmula de Haversine)
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadius = 6371000.0; // Radio de la Tierra en metros
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+
+    final a =
+        pow(sin(dLat / 2), 2) +
+        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) * pow(sin(dLon / 2), 2);
+
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  double _toRadians(double degrees) {
+    return degrees * pi / 180.0;
+  }
+
+  /// Agregar ubicación al buffer
+  void _addToBuffer(Position position) {
+    _locationBuffer.add({
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'accuracy': position.accuracy,
+      'speed': position.speed,
+      'heading': position.heading,
+      'recorded_at': position.timestamp.toIso8601String(),
+    });
+
+    debugPrint(
+      'Ubicación agregada al buffer (${_locationBuffer.length}/$_maxBatchSize)',
+    );
+  }
+
+  /// Enviar batch de ubicaciones al backend
+  Future<void> _sendBatch() async {
+    if (_locationBuffer.isEmpty) {
+      return;
+    }
+
+    try {
+      final batch = List<Map<String, dynamic>>.from(_locationBuffer);
+      _locationBuffer.clear();
+
+      debugPrint(
+        '📤 Enviando batch de ${batch.length} ubicaciones al backend...',
+      );
+
+      // ✅ Usar el endpoint de batch optimizado
+      final result = await _apiService.updateTechnicianLocationBatch(
+        locations: batch,
+      );
+
+      // Actualizar última ubicación enviada
+      if (batch.isNotEmpty) {
+        final lastLocation = batch.last;
+        _lastLocationSent = DateTime.now();
+        _lastLocationCoordinates = Position(
+          latitude: lastLocation['latitude'],
+          longitude: lastLocation['longitude'],
+          timestamp: DateTime.parse(lastLocation['recorded_at']),
+          accuracy: lastLocation['accuracy'],
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: lastLocation['heading'],
+          headingAccuracy: 0,
+          speed: lastLocation['speed'],
+          speedAccuracy: 0,
+        );
+      }
+
+      final processed = result['locations_processed'] as int;
+      debugPrint('✅ Batch de $processed ubicaciones enviado exitosamente');
+    } catch (e) {
+      debugPrint('❌ Error al enviar batch: $e');
+      // No lanzar excepción para no interrumpir el tracking
+      // Las ubicaciones se perderán pero el tracking continuará
+    }
+  }
+
+  /// Enviar ubicación actual al backend (método legacy, ahora usa batching)
   Future<void> _sendCurrentLocation() async {
     try {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: _accuracy,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 0,
+        ),
       );
 
       // Filtrar ubicaciones con baja precisión
@@ -119,8 +296,11 @@ class TrackingService {
         accuracy: position.accuracy,
         speed: position.speed,
         heading: position.heading,
-        recordedAt: position.timestamp ?? DateTime.now(),
+        recordedAt: position.timestamp,
       );
+
+      _lastLocationSent = DateTime.now();
+      _lastLocationCoordinates = position;
 
       debugPrint(
         'Ubicación enviada: ${position.latitude}, ${position.longitude}',
@@ -204,6 +384,9 @@ class TrackingService {
   void dispose() {
     _locationTimer?.cancel();
     _locationTimer = null;
+    _batchTimer?.cancel();
+    _batchTimer = null;
     _isTracking = false;
+    _locationBuffer.clear();
   }
 }

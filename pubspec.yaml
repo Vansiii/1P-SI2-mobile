@@ -72,6 +72,10 @@ dependencies:
   # Forms & Validation
   intl: ^0.20.1
   
+  # Cache Local
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
   # Loading & Animations
   flutter_spinkit: ^5.2.1
   
@@ -99,6 +103,9 @@ dependencies:
   
   # Device Info
   device_info_plus: ^11.2.0
+  
+  # Connectivity
+  connectivity_plus: ^6.1.2
 
   # JSON Serialization (code generation)
   json_serializable: ^6.8.0

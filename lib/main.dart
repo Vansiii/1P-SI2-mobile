@@ -12,6 +12,7 @@ import 'data/services/api_service.dart';
 import 'features/auth/providers/auth_provider.dart';
 import 'services/push_notification_service.dart';
 import 'services/notification_handler.dart';
+import 'features/chat/services/chat_cache.dart';
 
 /// Entry point por defecto
 /// - flutter run → usa .env.development (local)
@@ -28,6 +29,18 @@ Future<void> main() async {
       : Environment.development;
 
   await EnvironmentConfig.init(environment);
+
+  // Inicializar cache de chat con Hive
+  try {
+    await ChatCache.init();
+    if (kDebugMode) {
+      print('✅ Chat cache initialized');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('❌ Error initializing chat cache: $e');
+    }
+  }
 
   // Inicializar Firebase
   try {

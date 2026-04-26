@@ -1,83 +1,52 @@
 import 'package:flutter/material.dart';
 
-/// Widget que muestra un aviso visual para casos ambiguos
-/// con opción de solicitar cancelación mutua
+/// Aviso compacto para casos ambiguos — diseño discreto tipo banner
 class AmbiguousCaseNotice extends StatelessWidget {
   final VoidCallback onRequestCancellation;
 
-  const AmbiguousCaseNotice({Key? key, required this.onRequestCancellation})
-    : super(key: key);
+  const AmbiguousCaseNotice({super.key, required this.onRequestCancellation});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFF7ED), Color(0xFFFFEDD5)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(color: const Color(0xFFF59E0B), width: 1.5),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFF59E0B).withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: const Color(0xFFFFF7ED),
+        border: Border.all(color: const Color(0xFFF59E0B), width: 1),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('⚠️', style: TextStyle(fontSize: 24)),
-          const SizedBox(width: 12),
+          const Text('⚠️', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Caso Ambiguo Detectado',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF92400E),
-                  ),
+            child: Text(
+              'Caso ambiguo — coordina detalles por chat',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Colors.orange[900],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onRequestCancellation,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Este caso requiere aclaración. Usa el chat para coordinar detalles, precio y alcance del servicio.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF78350F),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: onRequestCancellation,
-                  icon: const Icon(Icons.cancel, size: 16),
-                  label: const Text('Solicitar Cancelación'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEF4444),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 2,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],

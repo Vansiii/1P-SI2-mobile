@@ -1,12 +1,57 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_drawer.dart';
 import '../providers/incident_provider.dart';
+import '../providers/incidents_websocket_provider.dart';
+import '../data/models/incident_model.dart';
+import '../../../services/websocket_service.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../services/incident_analysis_realtime_service.dart';
 
-class IncidentsListScreen extends ConsumerWidget {
+class IncidentsListScreen extends ConsumerStatefulWidget {
   const IncidentsListScreen({super.key});
+
+  @override
+  ConsumerState<IncidentsListScreen> createState() =>
+      _IncidentsListScreenState();
+}
+
+class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ Conectar WebSocket para recibir actualizaciones en tiempo real
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final wsService = ref.read(webSocketServiceProvider);
+      final user = ref.read(authProvider).user;
+
+      if (user != null && !wsService.isConnected) {
+        // Conectar al WebSocket general (tracking del usuario)
+        wsService.connect('/ws/tracking/${user.id}');
+        debugPrint('✅ WebSocket connected for client user ${user.id}');
+      }
+    });
+
+    // Actualizar la UI cada minuto para refrescar los tiempos relativos
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
 
   Color _getStatusColor(String estado) {
     switch (estado) {
@@ -41,8 +86,90 @@ class IncidentsListScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final incidentsState = ref.watch(incidentsProvider);
+    // ✅ Activar el provider WebSocket para que los eventos actualicen la UI
+    ref.watch(incidentsWebSocketProvider);
+    // ✅ Activar el provider de análisis IA en tiempo real
+    ref.watch(incidentAnalysisRealtimeProvider);
+
+    // Sincronizar cambios del WebSocket al provider HTTP
+    ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
+      previous,
+      next,
+    ) {
+      if (previous == null) return;
+
+      // Si cambió la longitud (nuevo incidente o eliminado), recargar
+      if (next.length != previous.length) {
+        ref.read(incidentsProvider.notifier).loadIncidents();
+        return;
+      }
+
+      // Comparar incidentes por ID, no por índice
+      for (final nextIncident in next) {
+        final prevIncident = previous.firstWhere(
+          (inc) => inc.id == nextIncident.id,
+          orElse: () => nextIncident, // Si no existe, es nuevo
+        );
+
+        // Si es el mismo incidente, verificar si cambió algún campo relevante
+        if (prevIncident.id == nextIncident.id &&
+            (prevIncident.prioridadIa != nextIncident.prioridadIa ||
+                prevIncident.categoriaIa != nextIncident.categoriaIa ||
+                prevIncident.resumenIa != nextIncident.resumenIa ||
+                prevIncident.estadoActual != nextIncident.estadoActual ||
+                prevIncident.tallerId != nextIncident.tallerId ||
+                prevIncident.tecnicoId != nextIncident.tecnicoId)) {
+          debugPrint(
+            '[IncidentsListScreen] Syncing incident ${nextIncident.id} from WebSocket to HTTP provider',
+          );
+
+          // Actualizar el incidente en el provider HTTP
+          ref
+              .read(incidentsProvider.notifier)
+              .updateIncidentFromWebSocket(nextIncident.id, {
+                if (prevIncident.prioridadIa != nextIncident.prioridadIa)
+                  'prioridad_ia': nextIncident.prioridadIa,
+                if (prevIncident.categoriaIa != nextIncident.categoriaIa)
+                  'categoria_ia': nextIncident.categoriaIa,
+                if (prevIncident.resumenIa != nextIncident.resumenIa)
+                  'resumen_ia': nextIncident.resumenIa,
+                if (prevIncident.estadoActual != nextIncident.estadoActual)
+                  'estado_actual': nextIncident.estadoActual,
+                if (prevIncident.tallerId != nextIncident.tallerId)
+                  'taller_id': nextIncident.tallerId,
+                if (prevIncident.tecnicoId != nextIncident.tecnicoId)
+                  'tecnico_id': nextIncident.tecnicoId,
+              });
+        }
+      }
+    });
+
+    // ✅ Escuchar eventos de análisis IA completado
+    ref.listen<
+      Map<int, IncidentAnalysisState>
+    >(incidentAnalysisRealtimeProvider, (previous, next) {
+      if (previous == null) return;
+
+      // Detectar incidentes cuyo análisis acaba de completarse
+      for (final entry in next.entries) {
+        final incidentId = entry.key;
+        final analysisState = entry.value;
+        final prevState = previous[incidentId];
+
+        // Si el análisis cambió a completado, recargar ese incidente
+        if (prevState?.status != AnalysisStatus.completed &&
+            analysisState.status == AnalysisStatus.completed) {
+          debugPrint(
+            '[IncidentsListScreen] AI analysis completed for incident $incidentId, reloading...',
+          );
+
+          // Recargar el incidente específico para obtener los datos actualizados
+          ref.read(incidentsProvider.notifier).getIncidentDetail(incidentId);
+        }
+      }
+    });
 
     return PopScope(
       canPop: false,

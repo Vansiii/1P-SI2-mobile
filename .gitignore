@@ -60,9 +60,11 @@ app.*.map.json
 .env.production
 .env.local
 .env
+.env.*
 
-# Keep example file
+# Keep example files
 !.env.example
+!.env.*.example
 
 # Firebase configuration files - NO COMMITEAR
 android/app/google-services.json
@@ -71,3 +73,27 @@ ios/Runner/GoogleService-Info.plist
 # Keep example files
 !android/app/google-services.json.example
 !ios/Runner/GoogleService-Info.plist.example
+
+# Secrets and credentials
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Backup files
+*.backup
+*.bak
+
+# Generated files
+*.g.dart
+*.freezed.dart
+
+# Coverage
+coverage/
+*.lcov
+
+# Additional build artifacts
+*.dSYM.zip
+*.dSYM

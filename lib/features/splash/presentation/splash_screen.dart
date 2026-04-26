@@ -5,6 +5,8 @@ import '../../../core/config/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_logo.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../../services/websocket_service.dart';
+// storageServiceProvider está definido en auth_provider.dart
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -79,9 +81,30 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     // Navegar según el estado de autenticación usando GoRouter
     if (authState.isAuthenticated) {
+      // ✅ Reconectar WebSocket si el usuario ya estaba autenticado (ej: app reiniciada)
+      await _reconnectWebSocketIfNeeded(authState);
       context.go('/home');
     } else {
       context.go('/login');
+    }
+  }
+
+  /// Reconecta el WebSocket si el usuario ya está autenticado pero el WS no está conectado.
+  Future<void> _reconnectWebSocketIfNeeded(AuthState authState) async {
+    try {
+      final wsService = ref.read(webSocketServiceProvider);
+      if (wsService.isConnected) return; // ya conectado
+
+      final storageService = ref.read(storageServiceProvider);
+      final token = await storageService.getAccessToken();
+      if (token == null || token.isEmpty) return;
+
+      final userId = authState.user?.id;
+      if (userId == null) return;
+
+      wsService.connect('/api/v1/ws/tracking/$userId', token: token);
+    } catch (e) {
+      // No interrumpir la navegación si falla
     }
   }
 

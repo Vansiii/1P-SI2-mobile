@@ -116,13 +116,26 @@ cd 1P-SI2-mobile
 flutter pub get
 ```
 
-3. **Configurar API**
-Editar `lib/core/config/api_config.dart`:
-```dart
-static const String baseUrl = 'http://TU_IP:8000';
+3. **Configurar Variables de Entorno**
+```bash
+# Copia el archivo de ejemplo
+cp .env.example .env.development
+
+# Edita con tus valores
+# API_BASE_URL=http://TU_IP:8000 (si usas dispositivo físico)
+# API_BASE_URL=http://localhost:8000 (si usas emulador)
 ```
 
-4. **Ejecutar la aplicación**
+4. **Configurar Firebase (Opcional)**
+
+Solo si necesitas notificaciones push en desarrollo:
+
+- **Android**: Descarga `google-services.json` de Firebase Console y colócalo en `android/app/`
+- **iOS**: Descarga `GoogleService-Info.plist` de Firebase Console y colócalo en `ios/Runner/`
+
+**NOTA**: Estos archivos NO deben subirse a Git (ya están en `.gitignore`)
+
+5. **Ejecutar la aplicación**
 ```bash
 flutter run
 ```
@@ -196,17 +209,62 @@ flutter test
 flutter test --coverage
 ```
 
-## 📱 Build
+## 📱 Build y Deployment
 
-### Android
+### Development Build
+
+```bash
+# Debug mode (usa .env.development)
+flutter run
+
+# Release mode local
+flutter run --release
+```
+
+### Production Build
+
+**Android - APK (testing)**:
 ```bash
 flutter build apk --release
 ```
 
-### iOS
+**Android - AAB (Play Store)**:
+```bash
+flutter build appbundle --release
+```
+
+**iOS (App Store)**:
 ```bash
 flutter build ios --release
 ```
+
+### Deployment a Stores
+
+Para deployment completo a Google Play Store y Apple App Store, consulta:
+
+📖 **[Guía de Deployment Completa](docs/DEPLOYMENT.md)**
+
+Incluye:
+- Configuración de Firebase (Android + iOS)
+- Configuración de signing keys
+- Variables de entorno para producción
+- Proceso de subida a stores
+- Testing pre-release
+- Troubleshooting
+
+### Setup para Nuevos Desarrolladores
+
+Si eres nuevo en el proyecto, consulta:
+
+📖 **[Guía de Setup para Desarrolladores](SETUP_PARA_DESARROLLADORES.md)**
+
+Incluye:
+- Instalación de Flutter y herramientas
+- Configuración de emuladores
+- Variables de entorno
+- Comandos útiles
+- Convenciones de código
+- Debugging y testing
 
 ## 🎨 Componentes Reutilizables
 

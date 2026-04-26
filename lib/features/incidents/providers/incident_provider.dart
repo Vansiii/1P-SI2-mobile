@@ -186,6 +186,17 @@ class IncidentsNotifier extends StateNotifier<AsyncValue<List<IncidentModel>>> {
           longitude: updatedFields.containsKey('longitude')
               ? (updatedFields['longitude'] as num).toDouble()
               : incident.longitude,
+          assignedAt: updatedFields.containsKey('assigned_at')
+              ? (updatedFields['assigned_at'] != null
+                    ? DateTime.parse(updatedFields['assigned_at'] as String)
+                    : null)
+              : incident.assignedAt,
+          resolvedAt: updatedFields.containsKey('resolved_at')
+              ? (updatedFields['resolved_at'] != null
+                    ? DateTime.parse(updatedFields['resolved_at'] as String)
+                    : null)
+              : incident.resolvedAt,
+          updatedAt: DateTime.now(),
         );
       }).toList();
       state = AsyncValue.data(updated);

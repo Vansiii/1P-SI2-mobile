@@ -5,6 +5,9 @@ import '../../../data/repositories/auth_repository.dart';
 import '../../../data/services/api_service.dart';
 import '../../../data/services/storage_service.dart';
 import '../../../services/technician_location_service.dart';
+import '../../../services/websocket_service.dart';
+import '../../incidents/services/incident_realtime_service.dart';
+import '../../incidents/services/cancellation_realtime_service.dart';
 import 'push_token_provider.dart';
 
 // Providers
@@ -190,6 +193,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _startTechnicianLocationTracking();
       }
 
+      // ✅ Conectar WebSocket después del login exitoso
+      await _connectWebSocket(fullUser);
+
+      // ✅ Inicializar servicio de eventos en tiempo real para incidentes
+      // Solo para administradores que necesitan recibir notificaciones de nuevos incidentes
+      if (fullUser.userType == 'administrator') {
+        _initializeIncidentRealtimeService();
+        _initializeCancellationRealtimeService();
+      }
+
       // Registrar token FCM después del login exitoso
       await _registerPushToken();
     } catch (profileError) {
@@ -206,6 +219,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // Si el usuario es técnico, iniciar seguimiento de ubicación
       if (response.user?.userType == 'technician') {
         await _startTechnicianLocationTracking();
+      }
+
+      // ✅ Conectar WebSocket con datos básicos si falla el perfil completo
+      if (response.user != null) {
+        await _connectWebSocket(response.user!);
+
+        // ✅ Inicializar servicio de eventos en tiempo real para incidentes
+        // Solo para administradores
+        if (response.user!.userType == 'administrator') {
+          _initializeIncidentRealtimeService();
+          _initializeCancellationRealtimeService();
+        }
       }
 
       // Registrar token FCM después del login exitoso
@@ -228,6 +253,83 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e) {
       print('❌ AuthNotifier: Error al iniciar seguimiento de ubicación: $e');
       print('Stack trace: ${StackTrace.current}');
+    }
+  }
+
+  // ✅ Conectar WebSocket al autenticar usuario
+  Future<void> _connectWebSocket(UserModel user) async {
+    try {
+      final token = await _storageService.getAccessToken();
+      if (token == null || token.isEmpty) return;
+
+      final wsService = _ref.read(webSocketServiceProvider);
+
+      // ✅ Registrar callback de refresh token
+      wsService.setTokenRefreshCallback(() async {
+        print('🔄 WebSocket: Token refresh callback invoked');
+        final newToken = await _authRepository.refreshAccessToken();
+        if (newToken != null) {
+          print('✅ WebSocket: Token refreshed successfully');
+        } else {
+          print('❌ WebSocket: Token refresh failed');
+        }
+        return newToken;
+      });
+
+      // ✅ Registrar callback de sesión expirada
+      wsService.setSessionExpiredCallback(() {
+        print('🚫 WebSocket: Session expired - logging out');
+        logout();
+      });
+
+      final endpoint = '/api/v1/ws/tracking/${user.id}';
+      wsService.connect(endpoint, token: token);
+
+      print(
+        '✅ AuthNotifier: WebSocket conectado para usuario ${user.id} (${user.userType})',
+      );
+    } catch (e) {
+      print('❌ AuthNotifier: Error conectando WebSocket: $e');
+      // No lanzar error para no interrumpir el flujo de login
+    }
+  }
+
+  // ✅ Inicializar servicio de eventos en tiempo real para incidentes
+  void _initializeIncidentRealtimeService() {
+    try {
+      // El servicio se inicializa automáticamente al ser leído por primera vez
+      // gracias al provider que llama a initialize() en su constructor
+      _ref.read(incidentRealtimeServiceProvider);
+      print('✅ AuthNotifier: Incident realtime service initialized');
+    } catch (e) {
+      print('❌ AuthNotifier: Error initializing incident realtime service: $e');
+      // No lanzar error para no interrumpir el flujo de login
+    }
+  }
+
+  // ✅ Inicializar servicio de eventos en tiempo real para cancelaciones
+  void _initializeCancellationRealtimeService() {
+    try {
+      // El servicio se inicializa automáticamente al ser leído por primera vez
+      // gracias al provider que llama a initialize() en su constructor
+      _ref.read(cancellationRealtimeServiceProvider);
+      print('✅ AuthNotifier: Cancellation realtime service initialized');
+    } catch (e) {
+      print(
+        '❌ AuthNotifier: Error initializing cancellation realtime service: $e',
+      );
+      // No lanzar error para no interrumpir el flujo de login
+    }
+  }
+
+  // ✅ Desconectar WebSocket al hacer logout
+  void _disconnectWebSocket() {
+    try {
+      final wsService = _ref.read(webSocketServiceProvider);
+      wsService.disconnect();
+      print('✅ AuthNotifier: WebSocket desconectado');
+    } catch (e) {
+      print('❌ AuthNotifier: Error desconectando WebSocket: $e');
     }
   }
 
@@ -307,6 +409,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       // Desregistrar tokens FCM antes del logout
       await _unregisterPushTokens();
+
+      // ✅ Desconectar WebSocket antes del logout
+      _disconnectWebSocket();
 
       // Detener seguimiento de ubicación si está activo
       if (_locationService.isTracking) {

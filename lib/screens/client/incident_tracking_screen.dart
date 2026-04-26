@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:merchanic_repair/core/config/api_config.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
+import 'package:merchanic_repair/data/services/storage_service.dart';
 
 /// Pantalla de seguimiento de incidente para el cliente
 class IncidentTrackingScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class IncidentTrackingScreen extends StatefulWidget {
 
 class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
   late MapController _mapController;
-  final WebSocketService _wsService = WebSocketService();
+  late final WebSocketService _wsService = WebSocketService(StorageService());
   StreamSubscription? _wsSubscription;
 
   LatLng? _technicianLocation;

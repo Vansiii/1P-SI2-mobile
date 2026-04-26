@@ -6,6 +6,8 @@ import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/data/models/incident.dart';
 import 'package:merchanic_repair/services/api_service.dart';
 import 'package:merchanic_repair/features/incidents/presentation/incident_tracking_map_screen.dart';
+import 'package:merchanic_repair/core/websocket/event_types.dart';
+import 'package:merchanic_repair/services/websocket_service.dart';
 
 class TechnicianIncidentsScreen extends ConsumerStatefulWidget {
   const TechnicianIncidentsScreen({super.key});
@@ -22,10 +24,325 @@ class _TechnicianIncidentsScreenState
   bool _isLoading = true;
   String? _errorMessage;
 
+  // ✅ Suscripciones WebSocket para actualizaciones en tiempo real
+  final List<dynamic> _wsSubscriptions = [];
+
   @override
   void initState() {
     super.initState();
     _loadIncidents();
+    _subscribeToWebSocketEvents();
+  }
+
+  @override
+  void dispose() {
+    // ✅ Cancelar suscripciones al destruir el widget
+    for (final sub in _wsSubscriptions) {
+      sub.cancel();
+    }
+    _wsSubscriptions.clear();
+    super.dispose();
+  }
+
+  /// Suscribirse a eventos WebSocket relevantes para el técnico
+  /// ✅ ACTUALIZACIÓN PARCIAL: Ya no hace HTTP refetch, solo actualiza estado local
+  void _subscribeToWebSocketEvents() {
+    final wsService = ref.read(webSocketServiceProvider);
+
+    // ✅ Escuchar cambios de estado de incidentes (actualización parcial)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.incidentStatusChanged).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+        final newStatus = event.data['estado_actual'] as String?;
+        if (incidentId == null || newStatus == null) return;
+
+        setState(() {
+          _incidents = _incidents.map((i) {
+            if (i.id != incidentId) return i;
+            return i.copyWith(estadoActual: newStatus);
+          }).toList();
+          // Actualizar incidente activo si corresponde
+          if (_activeIncident?.id == incidentId) {
+            _activeIncident = _activeIncident?.copyWith(
+              estadoActual: newStatus,
+            );
+          }
+        });
+        debugPrint(
+          '✅ [TechnicianIncidents] Estado actualizado (WebSocket): $incidentId → $newStatus',
+        );
+      }),
+    );
+
+    // ✅ Escuchar asignaciones nuevas (actualización parcial, NO refetch)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.incidentAssigned).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+        final technicianId = event.data['technician_id'] as int?;
+        final workshopId = event.data['workshop_id'] as int?;
+
+        if (incidentId == null) return;
+
+        setState(() {
+          final index = _incidents.indexWhere((i) => i.id == incidentId);
+          if (index != -1) {
+            // Actualizar incidente existente
+            _incidents[index] = _incidents[index].copyWith(
+              tecnicoId: technicianId,
+              tallerId: workshopId,
+              estadoActual: 'asignado',
+            );
+          } else {
+            // Si no está en la lista, hacer fetch individual
+            _fetchSingleIncident(incidentId);
+          }
+
+          // Recalcular incidente activo
+          _activeIncident = _findActiveIncident();
+        });
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Asignación actualizada (WebSocket): $incidentId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar creación de incidentes (agregar a la lista)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.incidentCreated).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+
+        if (incidentId == null) return;
+
+        // Verificar si ya está en la lista
+        final exists = _incidents.any((i) => i.id == incidentId);
+        if (!exists) {
+          _fetchSingleIncident(incidentId);
+        }
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Nuevo incidente creado (WebSocket): $incidentId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar actualizaciones de incidentes (merge parcial)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.incidentUpdated).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+        final updatedFields =
+            event.data['updated_fields'] as Map<String, dynamic>?;
+
+        if (incidentId == null || updatedFields == null) return;
+
+        setState(() {
+          final index = _incidents.indexWhere((i) => i.id == incidentId);
+          if (index != -1) {
+            // Merge solo los campos que cambiaron
+            final current = _incidents[index];
+            _incidents[index] = current.copyWith(
+              descripcion:
+                  updatedFields['descripcion'] as String? ??
+                  current.descripcion,
+              estadoActual:
+                  updatedFields['estado_actual'] as String? ??
+                  current.estadoActual,
+              categoriaIa: updatedFields.containsKey('categoria_ia')
+                  ? updatedFields['categoria_ia'] as String?
+                  : current.categoriaIa,
+              severidadIa: updatedFields.containsKey('severidad_ia')
+                  ? updatedFields['severidad_ia'] as String?
+                  : current.severidadIa,
+            );
+
+            // Actualizar incidente activo si corresponde
+            if (_activeIncident?.id == incidentId) {
+              _activeIncident = _incidents[index];
+            }
+          }
+        });
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Incidente actualizado (WebSocket): $incidentId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar cancelaciones (remover de la lista)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.incidentCancelled).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+        if (incidentId == null) return;
+
+        setState(() {
+          _incidents = _incidents.where((i) => i.id != incidentId).toList();
+          if (_activeIncident?.id == incidentId) {
+            _activeIncident = null;
+          }
+        });
+        debugPrint(
+          '✅ [TechnicianIncidents] Incidente cancelado (WebSocket): $incidentId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar creación de vehículos (informativo)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.vehicleCreated).listen((event) {
+        if (!mounted) return;
+        final vehicleId = event.data['vehicle_id'] as int?;
+        final clientId = event.data['client_id'] as int?;
+
+        if (vehicleId == null || clientId == null) return;
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Vehículo creado (WebSocket): $vehicleId para cliente $clientId',
+        );
+        // Los incidentes relacionados se actualizarán con incident_updated
+      }),
+    );
+
+    // ✅ Escuchar actualización de vehículos (actualizar incidentes relacionados)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.vehicleUpdated).listen((event) {
+        if (!mounted) return;
+        final vehicleId = event.data['vehicle_id'] as int?;
+
+        if (vehicleId == null) return;
+
+        setState(() {
+          // Actualizar incidentes que tengan este vehículo
+          _incidents = _incidents.map((incident) {
+            if (incident.vehiculoId == vehicleId) {
+              // Actualizar datos del vehículo si están disponibles
+              return incident.copyWith(
+                // Los datos del vehículo se actualizarán en el próximo fetch
+                // o mediante incident_updated
+              );
+            }
+            return incident;
+          }).toList();
+
+          // Actualizar incidente activo si corresponde
+          if (_activeIncident?.vehiculoId == vehicleId) {
+            final index = _incidents.indexWhere(
+              (i) => i.id == _activeIncident!.id,
+            );
+            if (index != -1) {
+              _activeIncident = _incidents[index];
+            }
+          }
+        });
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Vehículo actualizado (WebSocket): $vehicleId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar eliminación de vehículos (informativo)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.vehicleDeleted).listen((event) {
+        if (!mounted) return;
+        final vehicleId = event.data['vehicle_id'] as int?;
+
+        if (vehicleId == null) return;
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Vehículo eliminado (WebSocket): $vehicleId',
+        );
+        // Los incidentes relacionados deberían ser manejados por el backend
+      }),
+    );
+
+    // ✅ Escuchar inicio de servicio (actualizar estado)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.serviceStarted).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+
+        if (incidentId == null) return;
+
+        setState(() {
+          final index = _incidents.indexWhere((i) => i.id == incidentId);
+          if (index != -1) {
+            _incidents[index] = _incidents[index].copyWith(
+              estadoActual: 'en_proceso',
+            );
+
+            // Actualizar incidente activo si corresponde
+            if (_activeIncident?.id == incidentId) {
+              _activeIncident = _incidents[index];
+            }
+          }
+        });
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Servicio iniciado (WebSocket): $incidentId',
+        );
+      }),
+    );
+
+    // ✅ Escuchar finalización de servicio (actualizar estado)
+    _wsSubscriptions.add(
+      wsService.getEventStream(EventType.serviceCompleted).listen((event) {
+        if (!mounted) return;
+        final incidentId = event.data['incident_id'] as int?;
+
+        if (incidentId == null) return;
+
+        setState(() {
+          final index = _incidents.indexWhere((i) => i.id == incidentId);
+          if (index != -1) {
+            _incidents[index] = _incidents[index].copyWith(
+              estadoActual: 'resuelto',
+            );
+
+            // Actualizar incidente activo si corresponde
+            if (_activeIncident?.id == incidentId) {
+              _activeIncident = _incidents[index];
+            }
+          }
+        });
+
+        debugPrint(
+          '✅ [TechnicianIncidents] Servicio completado (WebSocket): $incidentId',
+        );
+      }),
+    );
+  }
+
+  /// Fetch individual de un incidente cuando no está en cache
+  Future<void> _fetchSingleIncident(int incidentId) async {
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final response = await apiService.get(
+        '${ApiConfig.incidentes}/$incidentId',
+      );
+
+      if (!mounted) return;
+
+      if (response.containsKey('data')) {
+        final incident = Incident.fromJson(response['data']);
+        setState(() {
+          _incidents.insert(0, incident);
+          // Recalcular incidente activo
+          _activeIncident = _findActiveIncident();
+        });
+        debugPrint(
+          '✅ [TechnicianIncidents] Incidente individual cargado: $incidentId',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '❌ [TechnicianIncidents] Error al cargar incidente $incidentId: $e',
+      );
+    }
   }
 
   Future<void> _loadIncidents() async {
@@ -259,7 +576,9 @@ class _TechnicianIncidentsScreenState
   }
 
   Widget _buildActiveBanner() {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -613,7 +932,9 @@ class _TechnicianIncidentsScreenState
   }
 
   Widget _buildIncidentCard(Incident incident, bool isActive) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,

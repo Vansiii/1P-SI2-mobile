@@ -230,6 +230,36 @@ class ChatService {
     }
   }
 
+  /// Get messages since a specific message ID (for incremental sync)
+  Future<List<Message>> getMessagesSince(
+    String token,
+    int incidentId, {
+    required int sinceMessageId,
+  }) async {
+    try {
+      final response = await _client.get(
+        Uri.parse(
+          '$baseUrl/api/v1/chat/incidents/$incidentId/messages'
+          '?since_message_id=$sinceMessageId',
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> messagesJson = data['data'] ?? [];
+        return messagesJson.map((json) => Message.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to load messages: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error loading messages: $e');
+    }
+  }
+
   /// Send a message
   Future<Message> sendMessage(
     String token,
@@ -354,6 +384,74 @@ class ChatService {
   /// Update unread count
   void updateUnreadCount(int count) {
     _unreadCountController.add(count);
+  }
+
+  /// Send typing indicator via HTTP endpoint
+  Future<void> sendTypingIndicatorHTTP(String token, int incidentId) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/v1/chat/incidents/$incidentId/typing'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[ChatService] Failed to send typing indicator: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatService] Error sending typing indicator: $e');
+    }
+  }
+
+  /// Send typing stop indicator via HTTP endpoint
+  Future<void> sendTypingStopIndicatorHTTP(String token, int incidentId) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/v1/chat/incidents/$incidentId/typing/stop'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[ChatService] Failed to send typing stop indicator: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatService] Error sending typing stop indicator: $e');
+    }
+  }
+
+  /// Mark a specific message as read (for read receipts)
+  Future<void> markMessageAsRead(String token, int messageId) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/v1/chat/messages/$messageId/read'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint(
+          '[ChatService] Message $messageId marked as read at ${data['data']['read_at']}',
+        );
+      } else {
+        debugPrint(
+          '[ChatService] Failed to mark message as read: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatService] Error marking message as read: $e');
+    }
   }
 
   /// Dispose resources

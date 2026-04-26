@@ -27,9 +27,17 @@ class WebSocketEvent {
   final DateTime timestamp;
 
   factory WebSocketEvent.fromJson(Map<String, dynamic> json) {
+    // Support both legacy format (type + data) and new RealTimeEvent format (event_type + payload)
+    final typeString =
+        json['type'] as String? ?? json['event_type'] as String? ?? 'unknown';
+    final data =
+        (json['data'] as Map<String, dynamic>?) ??
+        (json['payload'] as Map<String, dynamic>?) ??
+        json; // Fallback to entire JSON if no data/payload
+
     return WebSocketEvent(
-      type: eventTypeFromString(json['type'] as String? ?? 'unknown'),
-      data: (json['data'] as Map<String, dynamic>?) ?? {},
+      type: eventTypeFromString(typeString),
+      data: data,
       timestamp: _parseTimestamp(json['timestamp']),
     );
   }
