@@ -8,6 +8,7 @@ import '../../../core/theme/app_colors.dart';
 import '../providers/incident_provider.dart';
 import '../data/models/incident_ai_analysis_model.dart';
 import '../data/models/incident_model.dart';
+import 'incident_tracking_map_screen.dart';
 
 class IncidentDetailScreen extends ConsumerStatefulWidget {
   final int incidentId;
@@ -30,6 +31,10 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   int? _playingAudioIndex;
   bool _isPlaying = false;
+
+  // Cancel incident
+  bool _isCancelling = false;
+  bool _isCompleting = false;
 
   @override
   void initState() {
@@ -180,6 +185,19 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
     WidgetRef ref,
     IncidentModel incident,
   ) {
+    // Verificar si el incidente está asignado y puede ser seguido en tiempo real
+    final canTrack =
+        incident.estadoActual == 'asignado' ||
+        incident.estadoActual == 'en_proceso' ||
+        incident.estadoActual == 'en_camino' ||
+        incident.estadoActual == 'en_sitio';
+
+    // Verificar si el incidente puede ser cancelado
+    final canCancel =
+        incident.estadoActual == 'pendiente' ||
+        incident.estadoActual == 'asignado' ||
+        incident.estadoActual == 'en_proceso';
+
     return Scaffold(
       backgroundColor: AppColors.baseBg,
       body: CustomScrollView(
@@ -190,6 +208,95 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
             pinned: true,
             backgroundColor: _getStatusColor(incident.estadoActual),
             foregroundColor: Colors.white,
+            actions: [
+              // Menú de acciones
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                enabled:
+                    !_isCancelling &&
+                    !_isCompleting, // Deshabilitar si hay operaciones en curso
+                onSelected: (value) {
+                  switch (value) {
+                    case 'cancel':
+                      _showCancelDialog(context, incident.id);
+                      break;
+                    case 'complete':
+                      _showCompleteDialog(context, incident.id);
+                      break;
+                  }
+                },
+                itemBuilder: (context) {
+                  final List<PopupMenuEntry<String>> items = [];
+
+                  // Opción de cancelar (solo si puede ser cancelado)
+                  if (canCancel) {
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: 'cancel',
+                        enabled: !_isCancelling && !_isCompleting,
+                        child: Row(
+                          children: [
+                            _isCancelling
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.cancel_outlined,
+                                    color: AppColors.error,
+                                  ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _isCancelling
+                                  ? 'Cancelando...'
+                                  : 'Cancelar Incidente',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Opción de completar (solo si está en proceso o en sitio)
+                  if (incident.estadoActual == 'en_proceso' ||
+                      incident.estadoActual == 'en_sitio') {
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: 'complete',
+                        enabled: !_isCancelling && !_isCompleting,
+                        child: Row(
+                          children: [
+                            _isCompleting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.check_circle_outline,
+                                    color: AppColors.success,
+                                  ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _isCompleting
+                                  ? 'Completando...'
+                                  : 'Marcar como Completado',
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return items;
+                },
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 'Emergencia #${incident.id}',
@@ -575,14 +682,31 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 32),
                 ],
               ),
             ),
           ),
         ],
       ),
+      // Botón flotante para seguimiento en tiempo real
+      floatingActionButton: canTrack
+          ? FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => IncidentTrackingMapScreen(
+                      incidentId: incident.id,
+                      userRole: 'client',
+                    ),
+                  ),
+                );
+              },
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.map),
+              label: const Text('Ver Seguimiento'),
+            )
+          : null,
     );
   }
 
@@ -1086,6 +1210,173 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
       }
     } catch (e) {
       debugPrint('Error playing audio: $e');
+    }
+  }
+
+  void _showCompleteDialog(BuildContext context, int incidentId) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Completar Incidente'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '¿Confirmas que el problema ha sido resuelto satisfactoriamente?',
+              style: TextStyle(fontSize: 14),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Esta acción marcará el incidente como completado.',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _completeIncident(incidentId);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sí, completar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCancelDialog(BuildContext context, int incidentId) {
+    final TextEditingController motivoController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar Incidente'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '¿Estás seguro de que deseas cancelar este incidente?',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: motivoController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo (opcional)',
+                hintText: 'Ej: Lo solucioné yo mismo',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+              maxLength: 200,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('No, volver'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              _cancelIncident(incidentId, motivoController.text.trim());
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sí, cancelar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelIncident(int incidentId, String motivo) async {
+    setState(() => _isCancelling = true);
+
+    try {
+      await ref
+          .read(incidentsProvider.notifier)
+          .cancelIncident(
+            incidentId: incidentId,
+            motivo: motivo.isEmpty ? null : motivo,
+          );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Incidente cancelado exitosamente'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+
+        // Volver a la lista de incidentes
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCancelling = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error al cancelar incidente: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _completeIncident(int incidentId) async {
+    setState(() => _isCompleting = true);
+
+    try {
+      await ref
+          .read(incidentsProvider.notifier)
+          .completeIncident(incidentId: incidentId);
+
+      if (mounted) {
+        setState(() => _isCompleting = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Incidente marcado como completado'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+
+        // Recargar los detalles del incidente para mostrar el nuevo estado
+        await _loadIncidentDetail();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isCompleting = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error al completar incidente: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 }

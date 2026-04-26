@@ -3,16 +3,19 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Google Services plugin for Firebase
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "com.example.mobile"
+    namespace = "com.mecanicoya.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -20,8 +23,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mobile"
+        // Application ID for MecánicoYa
+        applicationId = "com.mecanicoya.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -41,4 +44,21 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Core library desugaring for Java 8+ APIs
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    
+    // Import the Firebase BoM (Bill of Materials) - actualizado a la última versión
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+
+    // Firebase Cloud Messaging - sin especificar versión (usa la del BoM)
+    implementation("com.google.firebase:firebase-messaging-ktx")
+    
+    // Firebase Analytics - recomendado para tracking de notificaciones
+    implementation("com.google.firebase:firebase-analytics-ktx")
+    
+    // Add the dependencies for any other desired Firebase products
+    // https://firebase.google.com/docs/android/setup#available-libraries
 }

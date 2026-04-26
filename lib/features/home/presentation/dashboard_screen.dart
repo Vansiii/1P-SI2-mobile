@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/core/config/app_constants.dart';
 import 'package:merchanic_repair/core/widgets/exit_app_dialog.dart';
@@ -119,6 +121,12 @@ class DashboardScreen extends ConsumerWidget {
     final authState = ref.watch(authProvider);
     final user = authState.user;
 
+    // Si es técnico, mostrar vista específica para técnicos
+    if (user?.userType == AppConstants.userTypeTechnician) {
+      return _buildTechnicianDashboard(context, ref, user);
+    }
+
+    // Vista para clientes (funcionalidad completa)
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -923,6 +931,680 @@ class DashboardScreen extends ConsumerWidget {
         ),
       ),
       onTap: onTap,
+    );
+  }
+
+  // Vista específica para técnicos - Solo ubicación y estado
+  Widget _buildTechnicianDashboard(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic user,
+  ) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await ExitAppDialog.show(context);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.baseBg,
+        appBar: AppBar(
+          backgroundColor: AppColors.surface,
+          elevation: 0,
+          titleSpacing: 0,
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, color: AppColors.textMain),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+          title: Row(
+            children: [
+              const AppLogo(size: 30, withBackground: true, withShadow: false),
+              const SizedBox(width: 10),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    AppConstants.appName,
+                    style: TextStyle(
+                      color: AppColors.textMain,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    'Panel Técnico',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            // Indicador de estado en línea
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: user?.isOnline == true
+                    ? AppColors.success.withValues(alpha: 0.1)
+                    : AppColors.textMuted.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: user?.isOnline == true
+                      ? AppColors.success
+                      : AppColors.textMuted,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: user?.isOnline == true
+                          ? AppColors.success
+                          : AppColors.textMuted,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    user?.isOnline == true ? 'En línea' : 'Desconectado',
+                    style: TextStyle(
+                      color: user?.isOnline == true
+                          ? AppColors.success
+                          : AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        drawer: _buildTechnicianDrawer(context, ref, user),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Saludo personalizado
+              Text(
+                '¡Hola, ${user?.firstName ?? 'Técnico'}!',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textMain,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tu ubicación está siendo monitoreada en tiempo real',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: AppColors.textMuted),
+              ),
+
+              const SizedBox(height: 32),
+
+              // Estado del técnico
+              _buildTechnicianStatusCard(context, user),
+
+              const SizedBox(height: 24),
+
+              // Información de ubicación
+              _buildLocationCard(context, user),
+
+              const SizedBox(height: 24),
+
+              // Información del taller
+              if (user?.workshopId != null) _buildWorkshopCard(context, user),
+
+              const SizedBox(height: 32),
+
+              // Botón de actualizar ubicación manual - OCULTO (tracking automático)
+              // El tracking se actualiza automáticamente cada 30 segundos
+              const SizedBox(height: 16),
+
+              // Información adicional
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.info.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.info.withValues(alpha: 0.3),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppColors.info, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Tu ubicación se actualiza automáticamente cada 30 segundos mientras la app esté activa.',
+                        style: TextStyle(color: AppColors.info, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTechnicianStatusCard(BuildContext context, dynamic user) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.work_outline, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Estado del Técnico',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatusItem(
+                    context,
+                    'Disponibilidad',
+                    user?.isAvailable == true ? 'Disponible' : 'No disponible',
+                    user?.isAvailable == true
+                        ? AppColors.success
+                        : AppColors.warning,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildStatusItem(
+                    context,
+                    'Conexión',
+                    user?.isOnline == true ? 'En línea' : 'Desconectado',
+                    user?.isOnline == true
+                        ? AppColors.success
+                        : AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+
+            if (user?.lastSeenAt != null) ...[
+              const SizedBox(height: 16),
+              _buildStatusItem(
+                context,
+                'Última conexión',
+                _formatDate(user!.lastSeenAt!),
+                AppColors.textMuted,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationCard(BuildContext context, dynamic user) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.location_on, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Ubicación Actual',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (user?.currentLatitude != null &&
+                user?.currentLongitude != null) ...[
+              // Mapa usando flutter_map
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderLight, width: 1),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: LatLng(
+                      user!.currentLatitude!,
+                      user.currentLongitude!,
+                    ),
+                    initialZoom: 15,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.mobile',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: LatLng(
+                            user.currentLatitude!,
+                            user.currentLongitude!,
+                          ),
+                          width: 50,
+                          height: 50,
+                          child: const Icon(
+                            Icons.location_on,
+                            color: AppColors.error,
+                            size: 50,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Información de actualización
+              Row(
+                children: [
+                  const Icon(
+                    Icons.access_time,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      user?.locationUpdatedAt != null
+                          ? 'Actualizado ${_formatDate(user!.locationUpdatedAt!)}'
+                          : 'Actualizando...',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  if (user?.locationAccuracy != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.gps_fixed,
+                            size: 12,
+                            color: AppColors.success,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${user!.locationAccuracy!.toStringAsFixed(0)}m',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.location_off,
+                      color: AppColors.warning,
+                      size: 20,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ubicación no disponible. El sistema está obteniendo tu posición actual automáticamente.',
+                        style: TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkshopCard(BuildContext context, dynamic user) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.business, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Taller Asignado',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            _buildStatusItem(
+              context,
+              'Nombre del Taller',
+              user!.workshopName ?? 'Sin asignar',
+              AppColors.textMain,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusItem(
+    BuildContext context,
+    String label,
+    String value,
+    Color valueColor,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppColors.textMuted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: valueColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTechnicianDrawer(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic user,
+  ) {
+    return Drawer(
+      child: Column(
+        children: [
+          // Header del drawer
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 56, 24, 32),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [AppColors.primary, AppColors.primaryHover],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              children: [
+                // Avatar
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const AppLogo(
+                    size: 68,
+                    withBackground: false,
+                    withShadow: false,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Nombre del técnico
+                Text(
+                  user?.firstName ?? user?.email.split('@')[0] ?? 'Técnico',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                // Email
+                Text(
+                  user?.email ?? '',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 14,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 12),
+                // Badge de técnico
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Text(
+                    'Técnico',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Opciones del menú
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.home,
+                  title: 'Inicio',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/home');
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.assignment,
+                  title: 'Mis Incidencias',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/technician/incidents');
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.chat_bubble,
+                  title: 'Mensajes',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Mensajes - Próximamente')),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.history,
+                  title: 'Historial',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Historial - Próximamente')),
+                    );
+                  },
+                ),
+                const Divider(height: 32),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.person,
+                  title: 'Mi Perfil',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/profile');
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.settings,
+                  title: 'Configuración',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Configuración - Próximamente'),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.help_outline,
+                  title: 'Ayuda y Soporte',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Ayuda - Próximamente')),
+                    );
+                  },
+                ),
+                const Divider(height: 32),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.logout,
+                  title: 'Cerrar Sesión',
+                  onTap: () async {
+                    Navigator.pop(context);
+                    final shouldLogout = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Cerrar Sesión'),
+                        content: const Text(
+                          '¿Estás seguro de que deseas cerrar sesión?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text(
+                              'Cerrar Sesión',
+                              style: TextStyle(color: AppColors.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (shouldLogout == true && context.mounted) {
+                      await ref.read(authProvider.notifier).logout();
+                      if (context.mounted) {
+                        context.go('/login');
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

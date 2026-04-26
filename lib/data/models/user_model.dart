@@ -26,6 +26,10 @@ class UserModel {
   final double? currentLatitude; // Technician
   final double? currentLongitude; // Technician
   final bool? isAvailable; // Technician
+  final bool? isOnline; // Technician
+  final DateTime? lastSeenAt; // Technician
+  final DateTime? locationUpdatedAt; // Technician
+  final double? locationAccuracy; // Technician
   final int? roleLevel; // Administrator
 
   UserModel({
@@ -51,6 +55,10 @@ class UserModel {
     this.currentLatitude,
     this.currentLongitude,
     this.isAvailable,
+    this.isOnline,
+    this.lastSeenAt,
+    this.locationUpdatedAt,
+    this.locationAccuracy,
     this.roleLevel,
   });
 
@@ -84,6 +92,14 @@ class UserModel {
       currentLatitude: (json['current_latitude'] as num?)?.toDouble(),
       currentLongitude: (json['current_longitude'] as num?)?.toDouble(),
       isAvailable: json['is_available'] as bool?,
+      isOnline: json['is_online'] as bool?,
+      lastSeenAt: json['last_seen_at'] != null
+          ? DateTime.parse(json['last_seen_at'] as String)
+          : null,
+      locationUpdatedAt: json['location_updated_at'] != null
+          ? DateTime.parse(json['location_updated_at'] as String)
+          : null,
+      locationAccuracy: (json['location_accuracy'] as num?)?.toDouble(),
       roleLevel: json['role_level'] as int?,
     );
   }
@@ -113,6 +129,11 @@ class UserModel {
       if (currentLatitude != null) 'current_latitude': currentLatitude,
       if (currentLongitude != null) 'current_longitude': currentLongitude,
       if (isAvailable != null) 'is_available': isAvailable,
+      if (isOnline != null) 'is_online': isOnline,
+      if (lastSeenAt != null) 'last_seen_at': lastSeenAt!.toIso8601String(),
+      if (locationUpdatedAt != null)
+        'location_updated_at': locationUpdatedAt!.toIso8601String(),
+      if (locationAccuracy != null) 'location_accuracy': locationAccuracy,
       if (roleLevel != null) 'role_level': roleLevel,
     };
   }
@@ -140,6 +161,10 @@ class UserModel {
     double? currentLatitude,
     double? currentLongitude,
     bool? isAvailable,
+    bool? isOnline,
+    DateTime? lastSeenAt,
+    DateTime? locationUpdatedAt,
+    double? locationAccuracy,
     int? roleLevel,
   }) {
     return UserModel(
@@ -165,6 +190,10 @@ class UserModel {
       currentLatitude: currentLatitude ?? this.currentLatitude,
       currentLongitude: currentLongitude ?? this.currentLongitude,
       isAvailable: isAvailable ?? this.isAvailable,
+      isOnline: isOnline ?? this.isOnline,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
+      locationUpdatedAt: locationUpdatedAt ?? this.locationUpdatedAt,
+      locationAccuracy: locationAccuracy ?? this.locationAccuracy,
       roleLevel: roleLevel ?? this.roleLevel,
     );
   }

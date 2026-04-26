@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_drawer.dart';
-import '../../../core/widgets/exit_app_dialog.dart';
 import '../providers/vehicle_provider.dart';
 
 class VehiclesListScreen extends ConsumerWidget {

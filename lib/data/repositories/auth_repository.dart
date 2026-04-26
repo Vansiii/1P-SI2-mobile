@@ -24,8 +24,8 @@ class AuthRepository {
         data: {'email': email, 'password': password},
       );
 
-      print('📥 Respuesta recibida: ${response.data}');
-      final authResponse = AuthResponse.fromJson(response.data);
+      print('📥 Respuesta recibida: $response');
+      final authResponse = AuthResponse.fromJson(response);
 
       // Si no requiere 2FA, guardar tokens
       if (!authResponse.requires2fa &&
@@ -66,7 +66,7 @@ class AuthRepository {
         data: {'email': email, 'otp_code': otpCode},
       );
 
-      final authResponse = AuthResponse.fromJson(response.data);
+      final authResponse = AuthResponse.fromJson(response);
 
       // Guardar tokens después de 2FA exitoso
       if (authResponse.accessToken != null &&
@@ -116,7 +116,7 @@ class AuthRepository {
         },
       );
 
-      final authResponse = AuthResponse.fromJson(response.data);
+      final authResponse = AuthResponse.fromJson(response);
 
       // NO guardar tokens después del registro
       // El usuario debe iniciar sesión manualmente para obtener los tokens
@@ -133,10 +133,10 @@ class AuthRepository {
       print('🔍 Obteniendo perfil del usuario...');
       final response = await _apiService.get('${ApiConfig.auth}/me');
 
-      print('📥 Respuesta COMPLETA del perfil: ${response.data}');
+      print('📥 Respuesta COMPLETA del perfil: $response');
 
       // El backend devuelve los datos dentro de 'data'
-      final responseData = response.data as Map<String, dynamic>;
+      final responseData = response as Map<String, dynamic>;
       final userData = responseData['data'] as Map<String, dynamic>;
 
       print('👤 Datos del usuario parseados:');
@@ -199,7 +199,7 @@ class AuthRepository {
         data: {'email': email},
       );
 
-      return response.data['message'] as String;
+      return response['message'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -213,7 +213,7 @@ class AuthRepository {
         data: {'email': email, 'otp_code': otpCode},
       );
 
-      return response.data['data']['reset_token'] as String;
+      return response['data']['reset_token'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -227,7 +227,7 @@ class AuthRepository {
         data: {'email': email},
       );
 
-      return response.data['message'] as String;
+      return response['message'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -244,7 +244,7 @@ class AuthRepository {
         data: {'token': token, 'new_password': newPassword},
       );
 
-      return response.data['message'] as String;
+      return response['message'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -264,7 +264,7 @@ class AuthRepository {
         },
       );
 
-      return response.data['message'] as String;
+      return response['message'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -278,7 +278,7 @@ class AuthRepository {
         data: {'email': email},
       );
 
-      return response.data['message'] as String;
+      return response['message'] as String;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -288,7 +288,7 @@ class AuthRepository {
   Future<Map<String, dynamic>> get2FAStatus() async {
     try {
       final response = await _apiService.get('${ApiConfig.twoFactor}/status');
-      return response.data['data'] as Map<String, dynamic>;
+      return response['data'] as Map<String, dynamic>;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -298,7 +298,7 @@ class AuthRepository {
   Future<Map<String, dynamic>> enable2FA() async {
     try {
       final response = await _apiService.post('${ApiConfig.twoFactor}/enable');
-      return response.data['data'] as Map<String, dynamic>;
+      return response['data'] as Map<String, dynamic>;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -311,7 +311,7 @@ class AuthRepository {
         '${ApiConfig.twoFactor}/verify',
         data: {'otp': otpCode},
       );
-      return response.data['data'] as Map<String, dynamic>;
+      return response['data'] as Map<String, dynamic>;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -324,7 +324,7 @@ class AuthRepository {
         '${ApiConfig.twoFactor}/disable',
         data: {'password': password},
       );
-      return response.data['data'] as Map<String, dynamic>;
+      return response['data'] as Map<String, dynamic>;
     } on DioException catch (e) {
       throw _handleError(e);
     }
@@ -398,3 +398,4 @@ class AuthRepository {
     return 'Error de red. Intenta nuevamente.';
   }
 }
+

@@ -12,12 +12,8 @@ class PermissionsRepository {
     try {
       final response = await _apiService.get('${ApiConfig.admin}/permissions');
 
-      if (response.data == null) {
-        return [];
-      }
-
       // El backend devuelve {data: {permissions: [...], total: ...}}
-      final dataWrapper = response.data['data'];
+      final dataWrapper = response['data'];
       if (dataWrapper == null) {
         return [];
       }
@@ -41,12 +37,8 @@ class PermissionsRepository {
     try {
       final response = await _apiService.get('${ApiConfig.admin}/roles');
 
-      if (response.data == null) {
-        return [];
-      }
-
       // El backend devuelve {data: {roles: [...], total: ...}}
-      final dataWrapper = response.data['data'];
+      final dataWrapper = response['data'];
       if (dataWrapper == null) {
         return [];
       }
@@ -72,12 +64,8 @@ class PermissionsRepository {
         '${ApiConfig.admin}/roles/$role/permissions',
       );
 
-      if (response.data == null) {
-        throw Exception('Response data is null');
-      }
-
       // El backend devuelve {data: {role: ..., permissions: [...], total_permissions: ...}}
-      final dataWrapper = response.data['data'];
+      final dataWrapper = response['data'];
       if (dataWrapper == null) {
         throw Exception('Data wrapper is null');
       }
@@ -99,12 +87,8 @@ class PermissionsRepository {
         data: {'permissions': permissions},
       );
 
-      if (response.data == null) {
-        throw Exception('Response data is null');
-      }
-
       // El backend devuelve {data: {role: ..., permissions: [...], added: [...], removed: [...], message: ...}}
-      final dataWrapper = response.data['data'];
+      final dataWrapper = response['data'];
       if (dataWrapper == null) {
         throw Exception('Data wrapper is null');
       }

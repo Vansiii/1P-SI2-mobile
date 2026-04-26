@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/config/app_constants.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 import '../../../shared/utils/permission_utils.dart';
 import '../../profile/presentation/profile_screen.dart';
 import '../../security/presentation/security_screen.dart';
+import '../../auth/providers/auth_provider.dart';
+import '../../incidents/presentation/technician_incidents_screen.dart';
 import 'dashboard_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -17,12 +20,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    ProfileScreen(),
-    SecurityScreen(),
-  ];
-
   Future<void> _openCamera() async {
     final photo = await PermissionUtils.requestCameraAndTakePhoto(context);
 
@@ -33,8 +30,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+    final user = authState.user;
+
+    // Si es técnico, mostrar navegación con incidencias
+    if (user?.userType == AppConstants.userTypeTechnician) {
+      return _buildTechnicianHome();
+    }
+
+    // Vista completa para clientes
+    return _buildClientHome();
+  }
+
+  Widget _buildTechnicianHome() {
+    final List<Widget> technicianScreens = [
+      const DashboardScreen(),
+      const TechnicianIncidentsScreen(
+        key: ValueKey('technician_incidents_updated'),
+      ),
+      const ProfileScreen(),
+    ];
+
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
+      body: IndexedStack(index: _currentIndex, children: technicianScreens),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+        },
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: AppColors.primary,
+        unselectedItemColor: AppColors.textMuted,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_outlined),
+            activeIcon: Icon(Icons.dashboard),
+            label: 'Panel',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment_outlined),
+            activeIcon: Icon(Icons.assignment),
+            label: 'Incidencias',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Perfil',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClientHome() {
+    final List<Widget> clientScreens = const [
+      DashboardScreen(),
+      ProfileScreen(),
+      SecurityScreen(),
+    ];
+
+    return Scaffold(
+      body: IndexedStack(index: _currentIndex, children: clientScreens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {

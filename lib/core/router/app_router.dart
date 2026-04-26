@@ -13,12 +13,15 @@ import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/security/presentation/two_factor_screen.dart';
 import '../../features/security/presentation/session_history_screen.dart';
 import '../../features/security/presentation/delete_account_screen.dart';
+import '../../features/security/presentation/change_password_screen.dart';
+import '../../features/security/presentation/security_screen.dart';
 import '../../features/vehicles/presentation/vehicles_list_screen.dart';
 import '../../features/vehicles/presentation/add_vehicle_screen.dart';
 import '../../features/vehicles/presentation/vehicle_detail_screen.dart';
 import '../../features/vehicles/presentation/edit_vehicle_screen.dart';
 import '../../features/vehicles/presentation/vehicle_history_screen.dart';
 import '../../features/incidents/presentation/incidents_list_screen.dart';
+import '../../features/incidents/presentation/technician_incidents_screen.dart';
 import '../../features/incidents/presentation/report_incident_screen.dart';
 import '../../features/incidents/presentation/incident_detail_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
@@ -159,6 +162,16 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const EditProfileScreen(),
       ),
       GoRoute(
+        path: '/security',
+        name: 'security',
+        builder: (context, state) => const SecurityScreen(),
+      ),
+      GoRoute(
+        path: '/change-password',
+        name: 'change-password',
+        builder: (context, state) => const ChangePasswordScreen(),
+      ),
+      GoRoute(
         path: '/two-factor',
         name: 'two-factor',
         builder: (context, state) => const TwoFactorScreen(),
@@ -215,6 +228,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/incidents',
         name: 'incidents',
         builder: (context, state) => const IncidentsListScreen(),
+      ),
+      GoRoute(
+        path: '/technician-incidents',
+        name: 'technician-incidents',
+        builder: (context, state) => const TechnicianIncidentsScreen(),
       ),
       GoRoute(
         path: '/incidents/report',

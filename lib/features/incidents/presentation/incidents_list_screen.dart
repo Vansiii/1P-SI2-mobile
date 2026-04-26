@@ -20,6 +20,8 @@ class IncidentsListScreen extends ConsumerWidget {
         return AppColors.success;
       case 'cancelado':
         return AppColors.textMuted;
+      case 'sin_taller_disponible':
+        return AppColors.error;
       default:
         return AppColors.textMuted;
     }
@@ -399,6 +401,8 @@ class IncidentsListScreen extends ConsumerWidget {
         return Icons.check_circle_outline;
       case 'cancelado':
         return Icons.cancel_outlined;
+      case 'sin_taller_disponible':
+        return Icons.error_outline;
       default:
         return Icons.help_outline;
     }

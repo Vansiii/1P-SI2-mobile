@@ -306,4 +306,79 @@ class IncidentRepository {
       }
     }
   }
+
+  Future<IncidentModel> cancelIncident({
+    required int incidentId,
+    String? motivo,
+  }) async {
+    final token = await _storageService.getAccessToken();
+    if (token == null) throw Exception('No hay token de autenticación');
+
+    String url =
+        '${ApiConfig.baseUrl}${ApiConfig.incidentes}/$incidentId/cancelar';
+    if (motivo != null && motivo.isNotEmpty) {
+      url += '?motivo=${Uri.encodeComponent(motivo)}';
+    }
+
+    final response = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final jsonData = json.decode(response.body);
+      return IncidentModel.fromJson(jsonData['data']);
+    } else {
+      try {
+        final errorData = json.decode(response.body);
+        final errorMessage =
+            errorData['error']?['message'] ??
+            errorData['detail'] ??
+            'Error al cancelar incidente';
+        throw Exception(errorMessage);
+      } catch (e) {
+        if (e is Exception && e.toString().contains('Exception:')) {
+          rethrow;
+        }
+        throw Exception('Error al cancelar incidente');
+      }
+    }
+  }
+
+  Future<IncidentModel> completeIncident({required int incidentId}) async {
+    final token = await _storageService.getAccessToken();
+    if (token == null) throw Exception('No hay token de autenticación');
+
+    final response = await http.post(
+      Uri.parse(
+        '${ApiConfig.baseUrl}${ApiConfig.incidentes}/$incidentId/completar',
+      ),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final jsonData = json.decode(response.body);
+      return IncidentModel.fromJson(jsonData['data']);
+    } else {
+      try {
+        final errorData = json.decode(response.body);
+        final errorMessage =
+            errorData['error']?['message'] ??
+            errorData['detail'] ??
+            'Error al completar incidente';
+        throw Exception(errorMessage);
+      } catch (e) {
+        if (e is Exception && e.toString().contains('Exception:')) {
+          rethrow;
+        }
+        throw Exception('Error al completar incidente');
+      }
+    }
+  }
 }

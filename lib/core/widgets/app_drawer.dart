@@ -143,15 +143,17 @@ class AppDrawer extends ConsumerWidget {
                     context.go('/vehicles');
                   },
                 ),
-                _buildDrawerItem(
-                  context,
-                  icon: Icons.warning,
-                  title: 'Mis Emergencias',
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.go('/incidents');
-                  },
-                ),
+                // Solo mostrar "Mis Emergencias" para clientes, no para técnicos
+                if (user?.userType != 'technician')
+                  _buildDrawerItem(
+                    context,
+                    icon: Icons.warning,
+                    title: 'Mis Emergencias',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/incidents');
+                    },
+                  ),
                 _buildDrawerItem(
                   context,
                   icon: Icons.build,

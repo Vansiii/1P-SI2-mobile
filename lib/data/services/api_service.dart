@@ -96,24 +96,228 @@ class ApiService {
     );
   }
 
-  // Helper methods
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) {
+  // Helper methods - devuelven Response de Dio para compatibilidad con repositorios existentes
+  Future<Response> getRaw(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) {
     return _dio.get(path, queryParameters: queryParameters);
   }
 
-  Future<Response> post(String path, {dynamic data}) {
+  Future<Response> postRaw(String path, {dynamic data}) {
     return _dio.post(path, data: data);
   }
 
-  Future<Response> put(String path, {dynamic data}) {
+  Future<Response> putRaw(String path, {dynamic data}) {
     return _dio.put(path, data: data);
   }
 
-  Future<Response> patch(String path, {dynamic data}) {
+  Future<Response> patchRaw(String path, {dynamic data}) {
     return _dio.patch(path, data: data);
   }
 
-  Future<Response> delete(String path, {dynamic data}) {
+  Future<Response> deleteRaw(String path, {dynamic data}) {
     return _dio.delete(path, data: data);
+  }
+
+  // Helper methods - devuelven Map directamente para facilidad de uso en nuevos archivos
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    try {
+      final response = await _dio.get(path, queryParameters: queryParameters);
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> post(String path, {dynamic data}) async {
+    try {
+      final response = await _dio.post(path, data: data);
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> put(String path, {dynamic data}) async {
+    try {
+      final response = await _dio.put(path, data: data);
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> patch(String path, {dynamic data}) async {
+    try {
+      final response = await _dio.patch(path, data: data);
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> delete(String path, {dynamic data}) async {
+    try {
+      final response = await _dio.delete(path, data: data);
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // TRACKING METHODS
+  // ============================================================================
+
+  /// Iniciar sesión de tracking
+  Future<Map<String, dynamic>> startTrackingSession({int? incidentId}) async {
+    try {
+      final result = await post(
+        '/tracking/start',
+        data: incidentId != null ? {'incident_id': incidentId} : null,
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Detener sesión de tracking
+  Future<Map<String, dynamic>> stopTrackingSession({
+    bool calculateDistance = true,
+  }) async {
+    try {
+      final result = await post(
+        '/tracking/stop',
+        data: {'calculate_distance': calculateDistance},
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Actualizar ubicación del técnico
+  Future<void> updateTechnicianLocation({
+    required double latitude,
+    required double longitude,
+    required double accuracy,
+    required double speed,
+    required double heading,
+    required DateTime recordedAt,
+  }) async {
+    try {
+      print('📡 ApiService: updateTechnicianLocation llamado');
+      // Obtener el usuario actual para obtener el technician_id
+      final user = await _storageService.getUserData();
+      if (user == null) {
+        print('❌ ApiService: Usuario no autenticado');
+        throw Exception('Usuario no autenticado');
+      }
+
+      print('👤 ApiService: Usuario ID: ${user.id}, Tipo: ${user.userType}');
+      print('📍 ApiService: Enviando ubicación: ($latitude, $longitude)');
+
+      final endpoint = '/api/v1/tracking/technicians/${user.id}/location';
+      print('🌐 ApiService: Endpoint: $endpoint');
+
+      // Usar el endpoint correcto con el technician_id
+      final response = await post(
+        endpoint,
+        data: {
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': accuracy,
+          'speed': speed,
+          'heading': heading,
+          'recorded_at': recordedAt.toIso8601String(),
+        },
+      );
+
+      print('✅ ApiService: Ubicación actualizada exitosamente');
+      print('📊 ApiService: Response: $response');
+    } catch (e, stackTrace) {
+      print('❌ ApiService: Error al actualizar ubicación: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Notificar llegada del técnico al lugar del incidente
+  Future<void> notifyTechnicianArrived({required int incidentId}) async {
+    try {
+      await post('/tracking/arrived', data: {'incident_id': incidentId});
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Obtener sesión de tracking activa
+  Future<Map<String, dynamic>?> getActiveTrackingSession() async {
+    try {
+      final result = await get('/tracking/sessions/active');
+      return result['data'] as Map<String, dynamic>?;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Obtener historial de ubicaciones de una sesión
+  Future<List<Map<String, dynamic>>> getTrackingSessionHistory({
+    required int sessionId,
+    int? limit,
+  }) async {
+    try {
+      final result = await get(
+        '/tracking/sessions/$sessionId/history',
+        queryParameters: limit != null ? {'limit': limit} : null,
+      );
+      final data = result['data'] as List;
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // ============================================================================
+  // PUSH NOTIFICATIONS METHODS
+  // ============================================================================
+
+  /// Registrar token de notificaciones push
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+    String? deviceId,
+  }) async {
+    try {
+      await post(
+        '/api/v1/push/tokens/register',
+        data: {'token': token, 'platform': platform, 'device_id': deviceId},
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Eliminar token de notificaciones push
+  Future<void> deletePushToken({required String token}) async {
+    try {
+      await delete('/api/v1/push/tokens/unregister', data: {'token': token});
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Eliminar todos los tokens del usuario (útil para logout)
+  Future<void> deleteAllUserPushTokens() async {
+    try {
+      await delete('/push/tokens/unregister-all');
+    } catch (e) {
+      rethrow;
+    }
   }
 }

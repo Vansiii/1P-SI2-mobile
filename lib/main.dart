@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'core/theme/app_theme.dart';
 import 'core/config/app_constants.dart';
 import 'core/config/environment.dart';
@@ -9,6 +10,8 @@ import 'core/router/app_router.dart';
 import 'shared/utils/snackbar_utils.dart';
 import 'data/services/api_service.dart';
 import 'features/auth/providers/auth_provider.dart';
+import 'services/push_notification_service.dart';
+import 'services/notification_handler.dart';
 
 /// Entry point por defecto
 /// - flutter run → usa .env.development (local)
@@ -25,6 +28,40 @@ Future<void> main() async {
       : Environment.development;
 
   await EnvironmentConfig.init(environment);
+
+  // Inicializar Firebase
+  try {
+    await Firebase.initializeApp();
+    if (kDebugMode) {
+      print('✅ Firebase initialized');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('❌ Error initializing Firebase: $e');
+    }
+  }
+
+  // Inicializar servicio de notificaciones push
+  try {
+    await PushNotificationService().initialize();
+    if (kDebugMode) {
+      print('✅ Push notifications initialized');
+      print('📱 FCM Token: ${PushNotificationService().fcmToken}');
+
+      // Verificar si los permisos están otorgados
+      final areEnabled = await PushNotificationService()
+          .areNotificationsEnabled();
+      if (!areEnabled) {
+        print('⚠️ Notification permissions not granted');
+        print('💡 User needs to grant notification permissions');
+      }
+    }
+  } catch (e, stackTrace) {
+    if (kDebugMode) {
+      print('❌ Error initializing push notifications: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
 
   // Log de configuración (solo en debug)
   if (kDebugMode) {
@@ -52,6 +89,15 @@ class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
       // Invalidar el auth provider para forzar logout
       ref.invalidate(authProvider);
     };
+
+    // Escuchar notificaciones que abren la app (background/terminated)
+    PushNotificationService().onMessageReceived.listen((message) {
+      // Solo manejar mensajes que abrieron la app (no foreground)
+      // El foreground ya se maneja en _handleForegroundMessage
+      if (mounted) {
+        NotificationHandler.handleNotification(message, context);
+      }
+    });
   }
 
   @override
