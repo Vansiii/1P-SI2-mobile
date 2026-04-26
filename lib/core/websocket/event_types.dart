@@ -10,6 +10,7 @@ enum EventType {
   incidentUpdated,
   incidentResolved,
   incidentCancelled,
+  incidentReassigned,
 
   // ── Technician events ─────────────────────────────────────────────────────
   technicianAvailabilityChanged,
@@ -43,6 +44,7 @@ enum EventType {
   notificationsAllRead,
 
   // ── Chat events ───────────────────────────────────────────────────────────
+  messageSent,
   userTyping,
   userStoppedTyping,
   messageRead,
@@ -53,6 +55,8 @@ enum EventType {
   assignmentAccepted,
   assignmentRejected,
   assignmentTimeout,
+  incidentAssignmentTimeout,
+  incidentWorkStarted,
 
   // ── Service events ────────────────────────────────────────────────────────
   serviceStarted,
@@ -70,6 +74,7 @@ enum EventType {
   // ── System events ─────────────────────────────────────────────────────────
   ping,
   pong,
+  missedEventsResponse,
   error,
   unknown,
 }
@@ -94,6 +99,7 @@ const Map<String, EventType> _eventTypeMap = {
   'incident_updated': EventType.incidentUpdated,
   'incident_resolved': EventType.incidentResolved,
   'incident_cancelled': EventType.incidentCancelled,
+  'incident_reassigned': EventType.incidentReassigned,
 
   // Technician
   'technician_availability_changed': EventType.technicianAvailabilityChanged,
@@ -127,6 +133,9 @@ const Map<String, EventType> _eventTypeMap = {
   'notifications_all_read': EventType.notificationsAllRead,
 
   // Chat
+  'new_message': EventType.messageSent,
+  'chat.message_sent': EventType.messageSent,
+  'chat_message_sent': EventType.messageSent,
   'user_typing': EventType.userTyping,
   'user_stopped_typing': EventType.userStoppedTyping,
   'message_read': EventType.messageRead,
@@ -137,6 +146,11 @@ const Map<String, EventType> _eventTypeMap = {
   'assignment_accepted': EventType.assignmentAccepted,
   'assignment_rejected': EventType.assignmentRejected,
   'assignment_timeout': EventType.assignmentTimeout,
+
+  // Incident extended
+  'incident.assignment_timeout': EventType.incidentAssignmentTimeout,
+  'incident.work_started': EventType.incidentWorkStarted,
+  'incident.reassigned': EventType.incidentReassigned,
 
   // Service
   'service_started': EventType.serviceStarted,
@@ -154,6 +168,7 @@ const Map<String, EventType> _eventTypeMap = {
   // System
   'ping': EventType.ping,
   'pong': EventType.pong,
+  'missed_events_response': EventType.missedEventsResponse,
   'error': EventType.error,
   'unknown': EventType.unknown,
 };

@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/services/tracking_service.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
+import 'package:merchanic_repair/data/services/storage_service.dart';
 import 'dart:async';
 
 /// Modelo temporal de Incident (reemplazar cuando exista el modelo real)
@@ -58,8 +59,10 @@ class _ActiveServiceScreenState extends State<ActiveServiceScreen> {
   }
 
   Future<void> _initializeServices() async {
-    // Inicializar servicios
-    _wsService = WebSocketService();
+    // Inicializar servicios usando el provider
+    // Note: En un contexto de StatefulWidget, deberíamos usar ConsumerStatefulWidget
+    // Por ahora, creamos una instancia con StorageService
+    _wsService = WebSocketService(StorageService());
 
     // ✅ Conectar a WebSocket del incidente
     _wsService.connect(

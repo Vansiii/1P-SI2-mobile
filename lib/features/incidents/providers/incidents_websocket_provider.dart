@@ -67,6 +67,12 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
       _wsService
           .getEventStream(EventType.incidentCancelled)
           .listen(_onIncidentCancelled),
+      _wsService
+          .getEventStream(EventType.incidentReassigned)
+          .listen(_onIncidentReassigned),
+      _wsService
+          .getEventStream(EventType.assignmentTimeout)
+          .listen(_onAssignmentTimeout),
     ]);
   }
 
@@ -149,16 +155,31 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   void _onIncidentUpdated(WebSocketEvent event) {
     try {
       final payload = IncidentUpdatedPayload.fromJson(event.data);
+
+      debugPrint(
+        '[IncidentsWebSocketNotifier] incident_updated: id=${payload.incidentId}, '
+        'fields=${payload.updatedFields.keys.toList()}',
+      );
+
       state = state.map((incident) {
         if (incident.id != payload.incidentId) return incident;
-        return _mergeFields(incident, payload.updatedFields);
+        final updated = _mergeFields(incident, payload.updatedFields);
+
+        debugPrint(
+          '[IncidentsWebSocketNotifier] Updated incident ${incident.id}: '
+          'categoriaIa: ${incident.categoriaIa} → ${updated.categoriaIa}, '
+          'prioridadIa: ${incident.prioridadIa} → ${updated.prioridadIa}',
+        );
+
+        return updated;
       }).toList();
+
       debugPrint(
-        '[IncidentsWebSocketNotifier] incident_updated: id=${payload.incidentId}',
+        '[IncidentsWebSocketNotifier] State updated with ${state.length} incidents',
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint(
-        '[IncidentsWebSocketNotifier] Error handling incident_updated: $e',
+        '[IncidentsWebSocketNotifier] Error handling incident_updated: $e\n$stackTrace',
       );
     }
   }
@@ -206,6 +227,67 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     } catch (e) {
       debugPrint(
         '[IncidentsWebSocketNotifier] Error handling incident_cancelled: $e',
+      );
+    }
+  }
+
+  /// `incident_reassigned` → update tallerId when incident is reassigned to another workshop.
+  void _onIncidentReassigned(WebSocketEvent event) {
+    try {
+      final incidentId = event.data['incident_id'] as int?;
+      final newWorkshopId = event.data['new_workshop_id'] as int?;
+      final oldWorkshopId = event.data['old_workshop_id'] as int?;
+
+      if (incidentId == null) {
+        debugPrint(
+          '[IncidentsWebSocketNotifier] incident_reassigned: missing incident_id',
+        );
+        return;
+      }
+
+      state = state.map((incident) {
+        if (incident.id != incidentId) return incident;
+        return incident.copyWith(
+          tallerId: newWorkshopId,
+          // Keep tecnicoId null until workshop accepts
+          tecnicoId: null,
+        );
+      }).toList();
+
+      debugPrint(
+        '[IncidentsWebSocketNotifier] incident_reassigned: '
+        'id=$incidentId, old_workshop=$oldWorkshopId, new_workshop=$newWorkshopId',
+      );
+    } catch (e) {
+      debugPrint(
+        '[IncidentsWebSocketNotifier] Error handling incident_reassigned: $e',
+      );
+    }
+  }
+
+  /// `assignment_timeout` → mark that a workshop timed out (for UI display).
+  /// The incident remains visible but with timeout indicator.
+  void _onAssignmentTimeout(WebSocketEvent event) {
+    try {
+      final incidentId = event.data['incident_id'] as int?;
+      final workshopId = event.data['workshop_id'] as int?;
+
+      if (incidentId == null) {
+        debugPrint(
+          '[IncidentsWebSocketNotifier] assignment_timeout: missing incident_id',
+        );
+        return;
+      }
+
+      // We don't remove the incident from the list, just log it
+      // The UI can check assignment_attempts to show timeout indicator
+      debugPrint(
+        '[IncidentsWebSocketNotifier] assignment_timeout: '
+        'incident=$incidentId, workshop=$workshopId',
+      );
+    } catch (e) {
+      debugPrint(
+        '[IncidentsWebSocketNotifier] Error handling assignment_timeout: $e',
       );
     }
   }

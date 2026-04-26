@@ -4,6 +4,7 @@ import 'package:merchanic_repair/core/websocket/connection_status.dart';
 import 'package:merchanic_repair/core/websocket/event_models.dart';
 import 'package:merchanic_repair/core/websocket/event_types.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
+import 'package:merchanic_repair/data/services/storage_service.dart';
 
 /// A test stub for [WebSocketService] that allows emitting events directly
 /// without a real WebSocket connection.
@@ -16,7 +17,7 @@ import 'package:merchanic_repair/services/websocket_service.dart';
 class StubWebSocketService extends WebSocketService {
   final Map<EventType, StreamController<WebSocketEvent>> _stubControllers = {};
 
-  StubWebSocketService() : super();
+  StubWebSocketService() : super(StorageService());
 
   /// Emits a [WebSocketEvent] of [type] with [data] to all listeners.
   void emit(EventType type, Map<String, dynamic> data) {

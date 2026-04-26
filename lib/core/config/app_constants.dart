@@ -5,6 +5,9 @@ class AppConstants {
   static const String appVersion = '1.0.0';
   static const String appLogoAsset = 'assets/images/logo.png';
 
+  // API Paths
+  static const String refreshTokenPath = '/api/v1/tokens/refresh';
+
   // Storage Keys
   static const String accessTokenKey = 'access_token';
   static const String refreshTokenKey = 'refresh_token';

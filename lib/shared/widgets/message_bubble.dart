@@ -1,29 +1,68 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:merchanic_repair/data/models/message.dart';
+import 'package:merchanic_repair/data/models/message_status.dart';
+import 'package:merchanic_repair/shared/utils/date_formatter.dart';
 
 class MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMe;
+  final VoidCallback? onRetry;
+  final bool showAvatar;
+  final bool showName;
+  final bool isFirstInGroup;
+  final bool isLastInGroup;
 
-  const MessageBubble({super.key, required this.message, required this.isMe});
+  const MessageBubble({
+    super.key,
+    required this.message,
+    required this.isMe,
+    this.onRetry,
+    this.showAvatar = true,
+    this.showName = true,
+    this.isFirstInGroup = true,
+    this.isLastInGroup = true,
+  });
 
-  String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
+  /// Construye el ícono de estado del mensaje
+  Widget _buildStatusIcon(MessageStatus status) {
+    switch (status) {
+      case MessageStatus.sending:
+        return const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation(Color(0xFFFFFFFF)),
+          ),
+        );
 
-    if (difference.inDays == 0) {
-      // Today - show time
-      return DateFormat('HH:mm').format(dateTime);
-    } else if (difference.inDays == 1) {
-      // Yesterday
-      return 'Ayer ${DateFormat('HH:mm').format(dateTime)}';
-    } else if (difference.inDays < 7) {
-      // This week - show day name
-      return DateFormat('EEEE HH:mm', 'es').format(dateTime);
-    } else {
-      // Older - show date
-      return DateFormat('dd/MM/yyyy HH:mm').format(dateTime);
+      case MessageStatus.sent:
+        return Icon(
+          Icons.check_rounded,
+          size: 16,
+          color: Colors.white.withValues(alpha: 0.7),
+        );
+
+      case MessageStatus.delivered:
+        return Icon(
+          Icons.done_all_rounded,
+          size: 16,
+          color: Colors.white.withValues(alpha: 0.7),
+        );
+
+      case MessageStatus.read:
+        return const Icon(
+          Icons.done_all_rounded,
+          size: 16,
+          color: Color(0xFF34C759), // Verde iOS
+        );
+
+      case MessageStatus.failed:
+        return const Icon(
+          Icons.error_outline_rounded,
+          size: 16,
+          color: Color(0xFFFF3B30), // Rojo iOS
+        );
     }
   }
 
@@ -55,45 +94,50 @@ class MessageBubble extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 16),
+      margin: EdgeInsets.only(
+        left: isMe ? 60 : 12,
+        right: isMe ? 12 : 60,
+        top: isFirstInGroup ? 8 : 1,
+        bottom: isLastInGroup ? 8 : 1,
+      ),
       child: Row(
         mainAxisAlignment: isMe
             ? MainAxisAlignment.end
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Avatar para mensajes de otros (solo si no es mensaje propio)
+          // Avatar para mensajes de otros (solo si showAvatar)
           if (!isMe) ...[
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  message.senderName?.isNotEmpty == true
-                      ? message.senderName![0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+            if (showAvatar)
+              Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.only(right: 8, bottom: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007AFF).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    message.senderName?.isNotEmpty == true
+                        ? message.senderName![0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                      color: Color(0xFF007AFF),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
+              )
+            else
+              const SizedBox(width: 40), // Espaciado cuando no hay avatar
           ],
 
           // Burbuja del mensaje
           Flexible(
             child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: isMe
                     ? const Color(0xFF007AFF) // Azul iOS
@@ -106,8 +150,8 @@ class MessageBubble extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 2,
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
                     offset: const Offset(0, 1),
                   ),
                 ],
@@ -116,8 +160,9 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Nombre del remitente (solo para mensajes de otros)
+                  // Nombre del remitente (solo si showName)
                   if (!isMe &&
+                      showName &&
                       message.senderName != null &&
                       message.senderName!.isNotEmpty)
                     Padding(
@@ -151,7 +196,9 @@ class MessageBubble extends StatelessWidget {
                     children: [
                       Text(
                         message.createdAt != null
-                            ? _formatTime(message.createdAt!)
+                            ? DateFormatter.formatMessageTime(
+                                message.createdAt!,
+                              )
                             : 'Ahora',
                         style: TextStyle(
                           fontSize: 11,
@@ -163,18 +210,32 @@ class MessageBubble extends StatelessWidget {
                       ),
                       if (isMe) ...[
                         const SizedBox(width: 4),
-                        Icon(
-                          (message.isRead ?? false)
-                              ? Icons.done_all_rounded
-                              : Icons.done_rounded,
-                          size: 16,
-                          color: (message.isRead ?? false)
-                              ? Colors.white.withValues(alpha: 0.9)
-                              : Colors.white.withValues(alpha: 0.7),
-                        ),
+                        _buildStatusIcon(message.status),
                       ],
                     ],
                   ),
+
+                  // Botón de reintentar si falló
+                  if (isMe &&
+                      message.status == MessageStatus.failed &&
+                      onRetry != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: const Text('Reintentar'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFFF3B30),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          minimumSize: const Size(0, 0),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

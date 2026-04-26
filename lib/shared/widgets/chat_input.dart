@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 
 class ChatInput extends StatefulWidget {
   final Function(String) onSend;
-  final bool enabled;
 
-  const ChatInput({super.key, required this.onSend, this.enabled = true});
+  const ChatInput({super.key, required this.onSend});
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -34,7 +33,7 @@ class _ChatInputState extends State<ChatInput> {
   }
 
   void _handleSend() {
-    if (_hasText && widget.enabled) {
+    if (_hasText) {
       final text = _controller.text.trim();
       _controller.clear();
       widget.onSend(text);
@@ -74,7 +73,6 @@ class _ChatInputState extends State<ChatInput> {
                 ),
                 child: TextField(
                   controller: _controller,
-                  enabled: widget.enabled,
                   maxLines: null,
                   textCapitalization: TextCapitalization.sentences,
                   style: const TextStyle(
@@ -108,7 +106,7 @@ class _ChatInputState extends State<ChatInput> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: _hasText && widget.enabled
+                color: _hasText
                     ? const Color(0xFF007AFF)
                     : Colors.grey.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
@@ -117,12 +115,10 @@ class _ChatInputState extends State<ChatInput> {
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(18),
-                  onTap: _hasText && widget.enabled ? _handleSend : null,
+                  onTap: _hasText ? _handleSend : null,
                   child: Icon(
                     Icons.arrow_upward_rounded,
-                    color: _hasText && widget.enabled
-                        ? Colors.white
-                        : Colors.grey[600],
+                    color: _hasText ? Colors.white : Colors.grey[600],
                     size: 20,
                   ),
                 ),

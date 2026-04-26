@@ -247,6 +247,74 @@ class ApiService {
     }
   }
 
+  /// Actualizar ubicaciones del técnico en batch (optimizado)
+  ///
+  /// Envía múltiples ubicaciones en una sola petición HTTP para reducir
+  /// el consumo de red y batería.
+  ///
+  /// [locations] Lista de ubicaciones a enviar (máximo 10)
+  ///
+  /// Cada ubicación debe tener:
+  /// - latitude: double
+  /// - longitude: double
+  /// - accuracy: double
+  /// - speed: double
+  /// - heading: double
+  /// - recorded_at: String (ISO 8601)
+  ///
+  /// Retorna un Map con:
+  /// - technician_id: int
+  /// - locations_processed: int
+  /// - most_recent_location: Map con última ubicación
+  /// - updated_at: String (ISO 8601)
+  Future<Map<String, dynamic>> updateTechnicianLocationBatch({
+    required List<Map<String, dynamic>> locations,
+  }) async {
+    try {
+      print('📡 ApiService: updateTechnicianLocationBatch llamado');
+      print('📦 ApiService: Enviando batch de ${locations.length} ubicaciones');
+
+      // Validar que no se envíen más de 10 ubicaciones
+      if (locations.isEmpty) {
+        throw Exception('El batch de ubicaciones no puede estar vacío');
+      }
+      if (locations.length > 10) {
+        throw Exception(
+          'El batch no puede contener más de 10 ubicaciones (recibido: ${locations.length})',
+        );
+      }
+
+      // Obtener el usuario actual para obtener el technician_id
+      final user = await _storageService.getUserData();
+      if (user == null) {
+        print('❌ ApiService: Usuario no autenticado');
+        throw Exception('Usuario no autenticado');
+      }
+
+      print('👤 ApiService: Usuario ID: ${user.id}, Tipo: ${user.userType}');
+
+      final endpoint = '/api/v1/tracking/technicians/${user.id}/location/batch';
+      print('🌐 ApiService: Endpoint: $endpoint');
+
+      // Enviar batch al backend
+      final response = await post(endpoint, data: {'locations': locations});
+
+      final data = response['data'] as Map<String, dynamic>;
+      final processed = data['locations_processed'] as int;
+
+      print(
+        '✅ ApiService: Batch de $processed ubicaciones procesado exitosamente',
+      );
+      print('📊 ApiService: Response: $data');
+
+      return data;
+    } catch (e, stackTrace) {
+      print('❌ ApiService: Error al actualizar ubicaciones en batch: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
+  }
+
   /// Notificar llegada del técnico al lugar del incidente
   Future<void> notifyTechnicianArrived({required int incidentId}) async {
     try {

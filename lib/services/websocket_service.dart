@@ -4,11 +4,14 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'package:merchanic_repair/core/config/api_config.dart';
 import 'package:merchanic_repair/core/websocket/event_types.dart';
 import 'package:merchanic_repair/core/websocket/event_models.dart';
 import 'package:merchanic_repair/core/websocket/connection_status.dart';
 import 'package:merchanic_repair/core/websocket/crash_reporter.dart';
+import 'package:merchanic_repair/data/services/storage_service.dart';
 
 // ── Backward Compatibility ────────────────────────────────────────────────────
 // This service maintains full backward compatibility with the original
@@ -27,12 +30,23 @@ import 'package:merchanic_repair/core/websocket/crash_reporter.dart';
 // - `TrackingService`: no dependency on WebSocketService; unchanged ✅
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Import storageServiceProvider from api_service to avoid duplication
+import 'package:merchanic_repair/services/api_service.dart'
+    show storageServiceProvider;
+
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {
-  return WebSocketService();
+  final storageService = ref.watch(storageServiceProvider);
+  return WebSocketService(storageService);
 });
 
 class WebSocketService {
+  final StorageService _storageService;
+
+  WebSocketService(this._storageService);
+
   WebSocketChannel? _channel;
+  StreamSubscription?
+  _channelSubscription; // ✅ Track subscription to properly cancel
 
   // ── Backward-compatible general messages stream ───────────────────────────
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
@@ -52,6 +66,12 @@ class WebSocketService {
   // ── Exponential backoff reconnection state ────────────────────────────────
   int _reconnectAttempts = 0;
   static const int _maxReconnectAttempts = 5;
+  bool _isReconnecting = false; // ✅ Guard to prevent concurrent reconnections
+  Timer? _reconnectTimer; // ✅ Track reconnection timer
+
+  // ── Reconnection debounce to prevent rapid reconnects ─────────────────────
+  DateTime? _lastDisconnectTime;
+  static const Duration _reconnectDebounce = Duration(seconds: 2);
 
   // ── Heartbeat / pong tracking ─────────────────────────────────────────────
   DateTime? _lastPingSent;
@@ -59,6 +79,10 @@ class WebSocketService {
 
   // ── Missed events tracking (Task 19.1) ───────────────────────────────────
   DateTime? _lastEventTimestamp;
+  static const String _lastEventTimestampKey = 'last_event_timestamp';
+
+  // ── HTTP client for missed events recovery ───────────────────────────────
+  // Uses http package for REST API calls
 
   // ── Event deduplication (Task 19.1) ──────────────────────────────────────
   final Set<String> _processedEventIds = {};
@@ -101,8 +125,16 @@ class WebSocketService {
   /// Backward-compatible raw message stream.
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
+  /// Alias for messages stream - used by EventDispatcherService
+  /// to receive RealTimeEvent format messages (event_type + payload).
+  Stream<Map<String, dynamic>> get events => _messageController.stream;
+
   /// Stream of [ConnectionStatus] lifecycle events.
   Stream<ConnectionStatus> get connectionStatus =>
+      _connectionStatusController.stream;
+
+  /// Alias for connectionStatus (used by EventDispatcherService)
+  Stream<ConnectionStatus> get connectionState =>
       _connectionStatusController.stream;
 
   bool get isConnected => _isConnected;
@@ -152,19 +184,57 @@ class WebSocketService {
   /// no-op.  Calling it with a different endpoint first calls [disconnect].
   ///
   /// On success the [connectionStatus] stream emits [ConnectionStatus.connected]
-  /// and any missed events are requested via [requestMissedEvents].
+  /// and any missed events are requested via [syncMissedEvents].
   ///
   /// On failure the service schedules an automatic reconnect with exponential
   /// backoff (see [_scheduleReconnect]).
-  void connect(String endpoint, {String? token}) {
+  void connect(String endpoint, {String? token}) async {
     try {
-      if (_isConnected && _currentEndpoint == endpoint) {
+      // ✅ Diagnostic logging
+      debugPrint(
+        '[WebSocketService] 🔌 CONNECT called: endpoint=$endpoint, '
+        'isConnected=$_isConnected, currentEndpoint=$_currentEndpoint, '
+        'isReconnecting=$_isReconnecting',
+      );
+
+      // ✅ Prevent concurrent connections to the same endpoint
+      if (_isReconnecting && _currentEndpoint == endpoint) {
+        debugPrint(
+          '[WebSocketService] ⏳ Connection already in progress to $endpoint, skipping',
+        );
         return;
       }
+
+      // ✅ Prevent rapid reconnections (debounce)
+      if (_lastDisconnectTime != null) {
+        final timeSinceDisconnect = DateTime.now().difference(
+          _lastDisconnectTime!,
+        );
+        if (timeSinceDisconnect < _reconnectDebounce) {
+          final waitTime = _reconnectDebounce - timeSinceDisconnect;
+          debugPrint(
+            '[WebSocketService] ⏳ Debouncing reconnection, waiting ${waitTime.inMilliseconds}ms...',
+          );
+          await Future.delayed(waitTime);
+        }
+      }
+
+      if (_isConnected && _currentEndpoint == endpoint) {
+        debugPrint(
+          '[WebSocketService] ✅ Already connected to $endpoint, skipping',
+        );
+        return;
+      }
+
+      // ✅ Set reconnecting flag BEFORE disconnect to prevent race conditions
+      _isReconnecting = true;
 
       disconnect();
       _currentEndpoint = endpoint;
       _currentToken = token;
+
+      // Load last event timestamp from SharedPreferences
+      await _loadLastEventTimestamp();
 
       _emitConnectionStatus(ConnectionStatus.connecting);
 
@@ -175,6 +245,10 @@ class WebSocketService {
           ? uri.replace(queryParameters: {'token': token})
           : uri;
 
+      debugPrint(
+        '[WebSocketService] 🔌 Connecting to: ${uriWithToken.toString().replaceAll(RegExp(r'token=[^&]+'), 'token=***')}',
+      );
+
       _channel = WebSocketChannel.connect(uriWithToken);
       _isConnected = true;
 
@@ -183,14 +257,36 @@ class WebSocketService {
       stopPolling();
 
       _emitConnectionStatus(ConnectionStatus.connected);
+      debugPrint('[WebSocketService] ✅ Connected successfully to $endpoint');
 
       // Request any events missed while disconnected (Task 19.1)
-      requestMissedEvents();
+      await syncMissedEvents();
 
-      _channel!.stream.listen(
+      // ✅ Cancel previous subscription if it exists
+      await _channelSubscription?.cancel();
+
+      _channelSubscription = _channel!.stream.listen(
         (message) {
           try {
             final data = jsonDecode(message as String) as Map<String, dynamic>;
+
+            // Check for authentication error in message
+            final messageType =
+                data['type'] as String? ?? data['event_type'] as String?;
+            if (messageType == 'error') {
+              final code = data['code'] as String? ?? '';
+              final action = data['action'] as String? ?? '';
+
+              if (code == 'authentication_failed' ||
+                  action == 'refresh_token') {
+                debugPrint(
+                  '[WebSocketService] 🔐 Auth error detected in message: code=$code, action=$action',
+                );
+                _handleAuthError();
+                return;
+              }
+            }
+
             // Always forward to the backward-compatible stream
             _messageController.add(data);
             // Batch the event instead of routing immediately (Task 21.1)
@@ -226,16 +322,26 @@ class WebSocketService {
           _emitConnectionStatus(ConnectionStatus.disconnected);
           _scheduleReconnect();
         },
+        cancelOnError:
+            false, // ✅ No cancelar el stream en error, permitir reconexión
       );
 
       _startHeartbeat();
+
+      // ✅ Reset reconnecting flag after successful connection
+      _isReconnecting = false;
     } catch (e, stackTrace) {
       final errMsg = '[WebSocketService] Failed to connect: $e';
       debugPrint(errMsg);
       debugPrint('[WebSocketService] Stack trace: $stackTrace');
       _lastError = errMsg;
       _isConnected = false;
+      _isReconnecting = false; // ✅ Reset flag on error
       _emitConnectionStatus(ConnectionStatus.disconnected);
+
+      // ✅ Programar reconexión cuando falla la conexión inicial
+      _scheduleReconnect();
+
       // Report to Crashlytics (Task 23.2)
       _crashReporter.reportConnectionFailure(
         _currentEndpoint ?? 'unknown',
@@ -246,8 +352,21 @@ class WebSocketService {
   }
 
   void disconnect() {
+    debugPrint(
+      '[WebSocketService] 🔌 DISCONNECT called: '
+      'endpoint=$_currentEndpoint, isConnected=$_isConnected',
+    );
+
+    _lastDisconnectTime =
+        DateTime.now(); // ✅ Track disconnect time for debounce
     _heartbeatTimer?.cancel();
     _batchTimer?.cancel();
+    _reconnectTimer?.cancel(); // ✅ Cancel any pending reconnection
+
+    // ✅ Cancel stream subscription before closing channel
+    _channelSubscription?.cancel();
+    _channelSubscription = null;
+
     _channel?.sink.close();
     _channel = null;
     if (_isConnected) {
@@ -255,12 +374,16 @@ class WebSocketService {
       _emitConnectionStatus(ConnectionStatus.disconnected);
     }
     _isConnected = false;
+    // ✅ Don't reset _isReconnecting here if we're in the middle of a reconnection
+    // It will be reset in connect() or on error
     _currentEndpoint = null;
     _currentToken = null;
     _reconnectAttempts = 0;
     _lastPingSent = null;
     _lastPongReceived = null;
     stopPolling();
+
+    debugPrint('[WebSocketService] ✅ Disconnected successfully');
   }
 
   void send(Map<String, dynamic> message) {
@@ -279,23 +402,118 @@ class WebSocketService {
     debugPrint(
       '[WebSocketService] Manual retry requested — resetting backoff.',
     );
+    _reconnectTimer?.cancel(); // ✅ Cancel any pending reconnection
+    _isReconnecting = false; // ✅ Reset reconnection flag
     _reconnectAttempts = 0;
     connect(_currentEndpoint!, token: _currentToken);
   }
 
   // ── Missed events (Task 19.1) ─────────────────────────────────────────────
 
-  /// Sends a `get_missed_events` message to the server requesting all events
-  /// since [_lastEventTimestamp].  Only sent when a timestamp is available.
-  void requestMissedEvents() {
-    if (_lastEventTimestamp == null) return;
-    send({
-      'type': 'get_missed_events',
-      'since': _lastEventTimestamp!.toIso8601String(),
-    });
-    debugPrint(
-      '[WebSocketService] Requested missed events since $_lastEventTimestamp',
-    );
+  /// Loads the last event timestamp from SharedPreferences.
+  Future<void> _loadLastEventTimestamp() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final timestampStr = prefs.getString(_lastEventTimestampKey);
+      if (timestampStr != null) {
+        _lastEventTimestamp = DateTime.parse(timestampStr);
+        debugPrint(
+          '[WebSocketService] Loaded last event timestamp: $_lastEventTimestamp',
+        );
+      }
+    } catch (e) {
+      debugPrint('[WebSocketService] Error loading last event timestamp: $e');
+    }
+  }
+
+  /// Saves the last event timestamp to SharedPreferences.
+  Future<void> _saveLastEventTimestamp(DateTime timestamp) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _lastEventTimestampKey,
+        timestamp.toIso8601String(),
+      );
+      _lastEventTimestamp = timestamp;
+    } catch (e) {
+      debugPrint('[WebSocketService] Error saving last event timestamp: $e');
+    }
+  }
+
+  /// Syncs missed events from the backend via HTTP REST endpoint.
+  /// Makes a GET request to /api/v1/events/missed with the last event timestamp.
+  /// Processes returned events by calling [processRawEvent] for each.
+  Future<void> syncMissedEvents() async {
+    if (_lastEventTimestamp == null) {
+      debugPrint(
+        '[WebSocketService] No last event timestamp, skipping missed events sync',
+      );
+      return;
+    }
+
+    try {
+      // Get JWT token for authentication
+      final token = await _storageService.getAccessToken();
+      if (token == null || token.isEmpty) {
+        debugPrint(
+          '[WebSocketService] No access token available for missed events sync',
+        );
+        return;
+      }
+
+      // Build HTTP request URL
+      final baseUrl = ApiConfig.baseUrl;
+      final since = _lastEventTimestamp!.toIso8601String();
+      final url = Uri.parse('$baseUrl/api/v1/events/missed?since=$since');
+
+      debugPrint(
+        '[WebSocketService] Syncing missed events since $_lastEventTimestamp',
+      );
+
+      // Make HTTP GET request
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final events = data['events'] as List<dynamic>? ?? [];
+        final count = data['count'] as int? ?? 0;
+        final until = data['until'] as String?;
+
+        debugPrint('[WebSocketService] Recovered $count missed events');
+
+        // Process each missed event in order
+        for (final event in events) {
+          if (event is Map<String, dynamic>) {
+            processRawEvent(event);
+          }
+        }
+
+        // Update last event timestamp to the 'until' value from response
+        if (until != null) {
+          await _saveLastEventTimestamp(DateTime.parse(until));
+          debugPrint(
+            '[WebSocketService] Updated last event timestamp to $until',
+          );
+        }
+      } else if (response.statusCode == 401) {
+        debugPrint(
+          '[WebSocketService] Authentication failed during missed events sync',
+        );
+      } else {
+        debugPrint(
+          '[WebSocketService] Failed to sync missed events: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      debugPrint('[WebSocketService] Error syncing missed events: $e');
+    }
   }
 
   /// Public entry point for replaying raw events (e.g. from the HTTP
@@ -335,7 +553,10 @@ class WebSocketService {
 
   void dispose() {
     disconnect();
+    _reconnectTimer?.cancel(); // ✅ Cancel reconnection timer
     _batchTimer?.cancel();
+    _channelSubscription?.cancel(); // ✅ Cancel subscription
+    _channelSubscription = null;
     _messageController.close();
     _connectionStatusController.close();
     for (final controller in _eventControllers.values) {
@@ -370,9 +591,13 @@ class WebSocketService {
     final startTime = DateTime.now(); // Task 21.2 latency tracking
 
     try {
-      final typeString = data['type'] as String?;
+      // Support both legacy format (type) and new RealTimeEvent format (event_type)
+      final typeString =
+          data['type'] as String? ?? data['event_type'] as String?;
       if (typeString == null) {
-        debugPrint('[WebSocketService] Event missing "type" field, ignoring.');
+        debugPrint(
+          '[WebSocketService] Event missing "type" or "event_type" field, ignoring.',
+        );
         return;
       }
 
@@ -399,23 +624,31 @@ class WebSocketService {
         }
       }
 
-      final eventType = eventTypeFromString(typeString);
+      // Convert dots to underscores to match EventType enum (e.g., "incident.created" -> "incident_created")
+      final normalizedTypeString = typeString.replaceAll('.', '_');
+      final eventType = eventTypeFromString(normalizedTypeString);
 
       if (eventType == EventType.unknown) {
         debugPrint(
-          '[WebSocketService] Unknown event type "$typeString", ignoring.',
+          '[WebSocketService] Unknown event type "$typeString" (normalized: "$normalizedTypeString"), ignoring.',
         );
         return;
       }
 
       // ── Auth error handling (Task 22.1 / 22.2) ───────────────────────────
       if (eventType == EventType.error) {
-        final errorData = data['data'] as Map<String, dynamic>? ?? {};
+        final errorData = data['data'] as Map<String, dynamic>? ?? data;
         final code = errorData['code'] as String? ?? '';
-        if (code == 'auth_error' || code == 'token_expired') {
+        final action = errorData['action'] as String? ?? '';
+
+        // Check for authentication failures
+        if (code == 'authentication_failed' ||
+            code == 'auth_error' ||
+            code == 'token_expired' ||
+            action == 'refresh_token') {
           _authFailureCount++;
           debugPrint(
-            '[WebSocketService] Auth failure #$_authFailureCount: code=$code',
+            '[WebSocketService] 🔐 Auth failure #$_authFailureCount: code=$code, action=$action',
           );
           // Report to Crashlytics (Task 23.2)
           _crashReporter.reportAuthFailure(code);
@@ -427,7 +660,7 @@ class WebSocketService {
       final event = WebSocketEvent.fromJson(data);
 
       // ── Update last event timestamp (Task 19.1) ───────────────────────────
-      _lastEventTimestamp = event.timestamp;
+      _saveLastEventTimestamp(event.timestamp);
 
       // ── Event counts (Task 21.1) ──────────────────────────────────────────
       _eventCounts[eventType] = (_eventCounts[eventType] ?? 0) + 1;
@@ -467,24 +700,47 @@ class WebSocketService {
   // ── Auth error handler (Task 22.1) ────────────────────────────────────────
 
   Future<void> _handleAuthError() async {
+    debugPrint(
+      '[WebSocketService] 🔐 Handling auth error - attempting token refresh',
+    );
+
+    // Stop reconnection attempts while handling auth error
+    _reconnectTimer?.cancel();
+    _isReconnecting = false;
+
     if (_tokenRefreshCallback != null) {
       try {
+        debugPrint('[WebSocketService] 🔄 Calling token refresh callback...');
         final newToken = await _tokenRefreshCallback!();
         if (newToken != null && newToken.isNotEmpty) {
-          debugPrint('[WebSocketService] Token refreshed — reconnecting.');
+          debugPrint(
+            '[WebSocketService] ✅ Token refreshed successfully — reconnecting.',
+          );
+          _authFailureCount = 0; // Reset auth failure counter
+          _reconnectAttempts = 0; // Reset reconnect attempts
           final endpoint = _currentEndpoint;
           if (endpoint != null) {
+            // Wait a bit before reconnecting to avoid rapid reconnection
+            await Future.delayed(const Duration(milliseconds: 500));
             connect(endpoint, token: newToken);
           }
           return;
+        } else {
+          debugPrint(
+            '[WebSocketService] ❌ Token refresh returned null/empty token',
+          );
         }
       } catch (e) {
-        debugPrint('[WebSocketService] Token refresh failed: $e');
+        debugPrint('[WebSocketService] ❌ Token refresh failed: $e');
       }
+    } else {
+      debugPrint('[WebSocketService] ⚠️ No token refresh callback registered');
     }
 
     // Refresh failed or no callback — disconnect and notify session expired
-    debugPrint('[WebSocketService] Session expired — disconnecting.');
+    debugPrint(
+      '[WebSocketService] 🚫 Session expired — disconnecting and notifying app.',
+    );
     disconnect();
     _emitConnectionStatus(ConnectionStatus.disconnected);
     _sessionExpiredCallback?.call();
@@ -526,6 +782,14 @@ class WebSocketService {
   void _scheduleReconnect() {
     if (_currentEndpoint == null) return;
 
+    // ✅ Prevent concurrent reconnection attempts
+    if (_isReconnecting) {
+      debugPrint(
+        '[WebSocketService] Reconnection already in progress, skipping.',
+      );
+      return;
+    }
+
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       debugPrint(
         '[WebSocketService] Max reconnect attempts ($_maxReconnectAttempts) '
@@ -537,6 +801,7 @@ class WebSocketService {
 
     final delaySeconds = min(pow(2, _reconnectAttempts).toInt(), 16);
     _reconnectAttempts++;
+    _isReconnecting = true; // ✅ Set reconnection flag
 
     debugPrint(
       '[WebSocketService] Scheduling reconnect attempt $_reconnectAttempts '
@@ -545,7 +810,11 @@ class WebSocketService {
 
     _emitConnectionStatus(ConnectionStatus.reconnecting);
 
-    Future.delayed(Duration(seconds: delaySeconds), () {
+    // ✅ Cancel any existing reconnect timer
+    _reconnectTimer?.cancel();
+
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
+      _isReconnecting = false; // ✅ Reset flag before attempting
       if (!_isConnected && _currentEndpoint != null) {
         connect(_currentEndpoint!, token: _currentToken);
       }
