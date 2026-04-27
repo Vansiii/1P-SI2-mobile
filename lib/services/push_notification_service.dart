@@ -3,6 +3,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart' as ph;
 
 /// Handler para notificaciones en background (debe ser top-level function)
 @pragma('vm:entry-point')
@@ -311,6 +312,8 @@ class PushNotificationService {
 
   /// Abrir configuración de la app para que el usuario habilite notificaciones
   Future<void> openAppSettings() async {
-    await openAppSettings();
+    // Llamamos a la función del paquete permission_handler, no a esta misma función.
+    // ignore: avoid_shadowing_type_parameters
+    await ph.openAppSettings();
   }
 }
