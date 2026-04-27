@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../payments/presentation/payment_screen.dart';
 import '../providers/incident_provider.dart';
 import '../data/models/incident_ai_analysis_model.dart';
 import '../data/models/incident_model.dart';
@@ -682,6 +683,36 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                       ],
                     ),
                   ),
+                  
+                  if (incident.estadoActual == 'resuelto') ...[
+                    const SizedBox(height: 32),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => PaymentScreen(
+                                incidentId: incident.id,
+                                incidentDescription: incident.descripcion,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.payment),
+                        label: const Text('Proceder al Pago', style: TextStyle(fontSize: 16)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

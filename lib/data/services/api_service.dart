@@ -388,4 +388,128 @@ class ApiService {
       rethrow;
     }
   }
+
+  // ============================================================================
+  // PAYMENT METHODS (Module 6)
+  // ============================================================================
+
+  /// Crear PaymentIntent para pagar un servicio
+  Future<Map<String, dynamic>> createPaymentIntent({
+    required int incidentId,
+  }) async {
+    try {
+      final result = await post(
+        '/api/v1/payments/create-intent',
+        data: {'incident_id': incidentId},
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Obtener historial de pagos del cliente
+  Future<Map<String, dynamic>> getPaymentHistory({
+    int page = 1,
+    int size = 20,
+  }) async {
+    try {
+      final result = await get(
+        '/api/v1/payments/my-history',
+        queryParameters: {'page': page, 'size': size},
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Obtener comprobante de pago
+  Future<Map<String, dynamic>> getPaymentReceipt({
+    required int transactionId,
+  }) async {
+    try {
+      final result = await get('/api/v1/payments/$transactionId/receipt');
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // WORKSHOP FINANCE METHODS (Module 6) - Para talleres en app móvil
+  // ============================================================================
+
+  /// Obtener wallet/saldo del taller
+  Future<Map<String, dynamic>> getWorkshopWallet() async {
+    try {
+      final result = await get('/api/v1/workshops/me/wallet');
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Obtener historial financiero del taller
+  Future<Map<String, dynamic>> getFinancialHistory({
+    int page = 1,
+    int size = 20,
+    String? movementType,
+  }) async {
+    try {
+      final params = <String, dynamic>{'page': page, 'size': size};
+      if (movementType != null) params['movement_type'] = movementType;
+      final result = await get(
+        '/api/v1/workshops/me/financial-history',
+        queryParameters: params,
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Solicitar retiro de dinero
+  Future<Map<String, dynamic>> requestWithdrawal({
+    required double amount,
+    String? bankName,
+    String? accountNumber,
+    String? accountHolder,
+    String? notes,
+  }) async {
+    try {
+      final result = await post(
+        '/api/v1/workshops/me/withdrawals',
+        data: {
+          'amount': amount,
+          if (bankName != null) 'bank_name': bankName,
+          if (accountNumber != null) 'account_number': accountNumber,
+          if (accountHolder != null) 'account_holder': accountHolder,
+          if (notes != null) 'notes': notes,
+        },
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Obtener lista de retiros del taller
+  Future<Map<String, dynamic>> getWorkshopWithdrawals({
+    int page = 1,
+    int size = 20,
+    String? status,
+  }) async {
+    try {
+      final params = <String, dynamic>{'page': page, 'size': size};
+      if (status != null) params['status'] = status;
+      final result = await get(
+        '/api/v1/workshops/me/withdrawals',
+        queryParameters: params,
+      );
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
 }

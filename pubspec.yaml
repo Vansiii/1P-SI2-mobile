@@ -110,6 +110,9 @@ dependencies:
   # JSON Serialization (code generation)
   json_serializable: ^6.8.0
 
+  # Stripe Payments (Module 6)
+  flutter_stripe: ^11.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

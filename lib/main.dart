@@ -13,6 +13,7 @@ import 'features/auth/providers/auth_provider.dart';
 import 'services/push_notification_service.dart';
 import 'services/notification_handler.dart';
 import 'features/chat/services/chat_cache.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 /// Entry point por defecto
 /// - flutter run → usa .env.development (local)
@@ -29,6 +30,21 @@ Future<void> main() async {
       : Environment.development;
 
   await EnvironmentConfig.init(environment);
+
+  // Inicializar Stripe SDK
+  try {
+    Stripe.publishableKey = const String.fromEnvironment(
+      'STRIPE_PUBLISHABLE_KEY',
+      defaultValue: 'pk_test_51TQbdQINJwSn57ZfRrLI3rKlhAb6kQj2kZmCd9fZxYq5vL1qMjNpOw2rRsStTu4UVWX5yZa0bCdEfGhIjKlMnOpQ00RSTUVWX',
+    );
+    if (kDebugMode) {
+      print('✅ Stripe SDK initialized');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('⚠️ Stripe initialization error: $e');
+    }
+  }
 
   // Inicializar cache de chat con Hive
   try {
