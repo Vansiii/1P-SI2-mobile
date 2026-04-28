@@ -407,6 +407,18 @@ class ApiService {
       rethrow;
     }
   }
+  
+  /// Consultar el estado de pago de un incidente
+  Future<Map<String, dynamic>> checkIncidentPaymentStatus({
+    required int incidentId,
+  }) async {
+    try {
+      final result = await get('/api/v1/payments/incident/$incidentId/status');
+      return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
 
   /// Obtener historial de pagos del cliente
   Future<Map<String, dynamic>> getPaymentHistory({

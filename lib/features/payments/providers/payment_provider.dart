@@ -2,6 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/services/api_service.dart';
 import '../../../features/auth/providers/auth_provider.dart';
+import 'package:dio/dio.dart';
+
+String _getErrorMessage(dynamic e) {
+  if (e is DioException) {
+    final data = e.response?.data;
+    if (data is Map && data.containsKey('detail')) {
+      return data['detail'].toString();
+    }
+    return e.message ?? 'Error de conexión al servidor';
+  }
+  return e.toString();
+}
 
 // Payment state
 class PaymentState {
@@ -56,7 +68,19 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
       state = state.copyWith(isLoading: false, paymentIntent: result);
       return result;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
+      return null;
+    }
+  }
+
+  /// Check payment status of an incident
+  Future<Map<String, dynamic>?> checkPaymentStatus(int incidentId) async {
+    try {
+      final result = await _apiService.checkIncidentPaymentStatus(
+        incidentId: incidentId,
+      );
+      return result;
+    } catch (e) {
       return null;
     }
   }
@@ -81,7 +105,7 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
         totalPayments: result['total'] as int? ?? 0,
       );
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
     }
   }
 
@@ -96,7 +120,7 @@ class PaymentNotifier extends StateNotifier<PaymentState> {
       state = state.copyWith(isLoading: false, receipt: result);
       return result;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
       return null;
     }
   }
@@ -159,7 +183,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       final result = await _apiService.getWorkshopWallet();
       state = state.copyWith(isLoading: false, wallet: result);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
     }
   }
 
@@ -172,7 +196,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
           .toList() ?? [];
       state = state.copyWith(isLoading: false, movements: movements);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
     }
   }
 
@@ -196,7 +220,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
       await loadWallet();
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
       return false;
     }
   }
@@ -210,7 +234,7 @@ class WalletNotifier extends StateNotifier<WalletState> {
           .toList() ?? [];
       state = state.copyWith(isLoading: false, withdrawals: withdrawals);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _getErrorMessage(e));
     }
   }
 }

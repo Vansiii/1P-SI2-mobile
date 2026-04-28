@@ -129,7 +129,7 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => _ReceiptScreen(transactionId: txnId),
+                        builder: (_) => PaymentReceiptScreen(transactionId: txnId),
                       ),
                     );
                   }
@@ -344,16 +344,16 @@ class _PaymentScreenState extends ConsumerState<PaymentScreen> {
 }
 
 /// Pantalla simple de recibo de pago
-class _ReceiptScreen extends ConsumerStatefulWidget {
+class PaymentReceiptScreen extends ConsumerStatefulWidget {
   final int transactionId;
 
-  const _ReceiptScreen({required this.transactionId});
+  const PaymentReceiptScreen({super.key, required this.transactionId});
 
   @override
-  ConsumerState<_ReceiptScreen> createState() => _ReceiptScreenState();
+  ConsumerState<PaymentReceiptScreen> createState() => _PaymentReceiptScreenState();
 }
 
-class _ReceiptScreenState extends ConsumerState<_ReceiptScreen> {
+class _PaymentReceiptScreenState extends ConsumerState<PaymentReceiptScreen> {
   @override
   void initState() {
     super.initState();

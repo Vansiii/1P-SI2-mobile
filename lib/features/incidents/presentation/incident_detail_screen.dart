@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../payments/presentation/payment_screen.dart';
+import '../../payments/providers/payment_provider.dart';
 import '../providers/incident_provider.dart';
 import '../data/models/incident_ai_analysis_model.dart';
 import '../data/models/incident_model.dart';
@@ -27,6 +28,11 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   bool _isLoading = true;
   bool _isLoadingAiAnalysis = false;
   String? _error;
+  
+  // Payment status
+  bool _isPaid = false;
+  int? _transactionId;
+  bool _isCheckingPayment = false;
 
   // Audio player
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -67,12 +73,40 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         });
 
         await _loadAiAnalysisData();
+        
+        if (incident.estadoActual == 'resuelto') {
+          await _checkPaymentStatus();
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _error = e.toString();
           _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkPaymentStatus() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isCheckingPayment = true;
+    });
+    
+    try {
+      final status = await ref.read(paymentProvider.notifier).checkPaymentStatus(widget.incidentId);
+      if (status != null && status['is_paid'] == true && mounted) {
+        setState(() {
+          _isPaid = true;
+          _transactionId = status['transaction_id'] as int?;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingPayment = false;
         });
       }
     }
@@ -686,32 +720,64 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                   
                   if (incident.estadoActual == 'resuelto') ...[
                     const SizedBox(height: 32),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => PaymentScreen(
-                                incidentId: incident.id,
-                                incidentDescription: incident.descripcion,
+                    if (_isCheckingPayment)
+                      const Center(child: CircularProgressIndicator())
+                    else if (_isPaid)
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _transactionId == null ? null : () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PaymentReceiptScreen(
+                                  transactionId: _transactionId!,
+                                ),
                               ),
+                            );
+                          },
+                          icon: const Icon(Icons.receipt_long),
+                          label: const Text('Ver Comprobante de Pago', style: TextStyle(fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                          );
-                        },
-                        icon: const Icon(Icons.payment),
-                        label: const Text('Proceder al Pago', style: TextStyle(fontSize: 16)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      )
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PaymentScreen(
+                                  incidentId: incident.id,
+                                  incidentDescription: incident.descripcion,
+                                ),
+                              ),
+                            ).then((_) {
+                              // Reload incident detail after returning from payment screen
+                              _loadIncidentDetail();
+                            });
+                          },
+                          icon: const Icon(Icons.payment),
+                          label: const Text('Proceder al Pago', style: TextStyle(fontSize: 16)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.success,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ],
               ),

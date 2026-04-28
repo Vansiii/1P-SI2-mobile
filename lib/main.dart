@@ -14,6 +14,7 @@ import 'services/push_notification_service.dart';
 import 'services/notification_handler.dart';
 import 'features/chat/services/chat_cache.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Entry point por defecto
 /// - flutter run → usa .env.development (local)
@@ -33,7 +34,7 @@ Future<void> main() async {
 
   // Inicializar Stripe SDK
   try {
-    Stripe.publishableKey = const String.fromEnvironment(
+    Stripe.publishableKey = dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? const String.fromEnvironment(
       'STRIPE_PUBLISHABLE_KEY',
       defaultValue: 'pk_test_51TQbdQINJwSn57ZfRrLI3rKlhAb6kQj2kZmCd9fZxYq5vL1qMjNpOw2rRsStTu4UVWX5yZa0bCdEfGhIjKlMnOpQ00RSTUVWX',
     );
