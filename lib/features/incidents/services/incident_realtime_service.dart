@@ -236,13 +236,9 @@ class IncidentRealtimeService {
         'estado_actual': event.technicianId != null ? 'en_proceso' : 'asignado',
       };
 
-      if (event.workshopId != null) {
-        updates['taller_id'] = event.workshopId;
-      }
+      updates['taller_id'] = event.workshopId;
 
-      if (event.technicianId != null) {
-        updates['tecnico_id'] = event.technicianId;
-      }
+      updates['tecnico_id'] = event.technicianId;
 
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, updates);
     } catch (e) {
@@ -425,9 +421,7 @@ class IncidentRealtimeService {
       // ✅ Update incident with technician and status
       final updates = <String, dynamic>{'estado_actual': 'en_camino'};
 
-      if (event.technicianId != null) {
-        updates['tecnico_id'] = event.technicianId;
-      }
+      updates['tecnico_id'] = event.technicianId;
 
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, updates);
     } catch (e) {
@@ -459,9 +453,7 @@ class IncidentRealtimeService {
       // ✅ Update incident with technician and status
       final updates = <String, dynamic>{'estado_actual': 'tecnico_llego'};
 
-      if (event.technicianId != null) {
-        updates['tecnico_id'] = event.technicianId;
-      }
+      updates['tecnico_id'] = event.technicianId;
 
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, updates);
     } catch (e) {
@@ -607,7 +599,9 @@ class IncidentRealtimeService {
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, {
         'categoria_ia': event.diagnosis,
         'prioridad_ia': event.severity,
-        'resumen_ia': event.recommendations,
+        'resumen_ia': event.recommendations != null
+            ? (event.recommendations as List<String>).join('\n')
+            : null,
       });
     } catch (e) {
       debugPrint(

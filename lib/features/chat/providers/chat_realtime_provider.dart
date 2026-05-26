@@ -136,6 +136,7 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 
   final EventDispatcherService _dispatcher;
   final List<StreamSubscription<RealTimeEvent>> _subscriptions = [];
+  final Map<String, Timer> _typingExpiryTimers = {};
 
   // ── Subscription setup ────────────────────────────────────────────────────
 
@@ -213,6 +214,7 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
         },
       );
     }
+    _scheduleTypingExpiry(e.incidentId, e.userId, e.userName);
     debugPrint(
       '[ChatRealtimeNotifier] user_typing: incident=${e.incidentId} '
       'user=${e.userName}',
@@ -221,16 +223,24 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 
   /// Requirement 5.3 — hide typing indicator.
   void _onUserStoppedTyping(ChatUserStoppedTypingEvent e) {
-    final typing = state
-        .typingUsersFor(e.incidentId)
-        .where((name) => name != _userNameForId(e.incidentId, e.userId))
-        .toList();
+    final currentTyping = state.typingUsersFor(e.incidentId);
+    final nameFromEvent = e.userName?.trim();
+    final nameFromMessages = _userNameForId(e.incidentId, e.userId);
+    final nameToRemove = (nameFromEvent?.isNotEmpty ?? false)
+        ? nameFromEvent
+        : nameFromMessages;
+
+    final typing = nameToRemove != null
+        ? currentTyping.where((name) => name != nameToRemove).toList()
+        : <String>[];
+
     state = state.copyWith(
       typingUsersByIncident: {
         ...state.typingUsersByIncident,
         e.incidentId: typing,
       },
     );
+    _cancelTypingExpiry(e.incidentId, e.userId);
     debugPrint(
       '[ChatRealtimeNotifier] user_stopped_typing: incident=${e.incidentId} '
       'userId=${e.userId}',
@@ -252,9 +262,13 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 
   /// Requirement 5.5 — mark message as read.
   void _onMessageRead(ChatMessageReadEvent e) {
-    _updateMessageStatus(e.incidentId, e.messageId, ChatMessageStatus.read);
+    final incidentId = e.incidentId > 0
+        ? e.incidentId
+        : _findIncidentIdByMessageId(e.messageId);
+    if (incidentId <= 0) return;
+    _updateMessageStatus(incidentId, e.messageId, ChatMessageStatus.read);
     debugPrint(
-      '[ChatRealtimeNotifier] message_read: incident=${e.incidentId} '
+      '[ChatRealtimeNotifier] message_read: incident=$incidentId '
       'msg=${e.messageId}',
     );
   }
@@ -340,6 +354,37 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
     );
   }
 
+  int _findIncidentIdByMessageId(int messageId) {
+    for (final entry in state.messagesByIncident.entries) {
+      final exists = entry.value.any((message) => message.messageId == messageId);
+      if (exists) return entry.key;
+    }
+    return 0;
+  }
+
+  void _scheduleTypingExpiry(int incidentId, int userId, String userName) {
+    final key = '$incidentId:$userId';
+    _typingExpiryTimers[key]?.cancel();
+    _typingExpiryTimers[key] = Timer(const Duration(seconds: 5), () {
+      final typing = List<String>.from(state.typingUsersFor(incidentId))
+          .where((name) => name != userName)
+          .toList();
+      state = state.copyWith(
+        typingUsersByIncident: {
+          ...state.typingUsersByIncident,
+          incidentId: typing,
+        },
+      );
+      _typingExpiryTimers.remove(key);
+    });
+  }
+
+  void _cancelTypingExpiry(int incidentId, int userId) {
+    final key = '$incidentId:$userId';
+    _typingExpiryTimers[key]?.cancel();
+    _typingExpiryTimers.remove(key);
+  }
+
   /// Looks up the user name for [userId] from the current typing list.
   ///
   /// Falls back to removing by userId match in [_onUserStoppedTyping] since
@@ -358,6 +403,10 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 
   @override
   void dispose() {
+    for (final timer in _typingExpiryTimers.values) {
+      timer.cancel();
+    }
+    _typingExpiryTimers.clear();
     for (final sub in _subscriptions) {
       sub.cancel();
     }

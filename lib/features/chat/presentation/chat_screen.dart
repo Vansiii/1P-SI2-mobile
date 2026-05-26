@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:merchanic_repair/core/config/api_config.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/data/models/message.dart';
@@ -10,6 +11,8 @@ import 'package:merchanic_repair/services/api_service.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
 import 'package:merchanic_repair/features/chat/services/chat_realtime_service.dart';
 import 'package:merchanic_repair/features/chat/services/chat_cache.dart';
+import 'package:merchanic_repair/features/chat/providers/chat_realtime_provider.dart';
+import 'package:merchanic_repair/features/incidents/providers/incident_provider.dart';
 import 'package:merchanic_repair/core/websocket/connection_status.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -39,6 +42,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // Cancelación mutua
   CancellationRequest? _pendingCancellation;
   bool _isLoadingCancellation = false;
+  bool _redirectingAfterCancellation = false;
 
   // Typing indicator timer (Task 2.1, 2.2)
   Timer? _typingTimer;
@@ -381,6 +385,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     } catch (e) {
       // 404 = no hay solicitud pendiente, es normal
+      if (mounted) {
+        setState(() => _pendingCancellation = null);
+      }
       debugPrint('No pending cancellation: $e');
     }
   }
@@ -397,49 +404,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (!mounted) return;
       final type =
           message['type'] as String? ?? message['event_type'] as String?;
-      final incidentId = message['incident_id'];
+      final incidentId = _extractIncidentId(message);
 
       if (incidentId != null && incidentId != widget.incidentId) return;
 
       if (type == 'new_message' ||
           type == 'chat.message_sent' ||
           type == 'chat_message_sent') {
-        final msgData = message['message'] ?? message['data'];
-        if (msgData != null) {
-          try {
-            // Asegurarse de que msgData es un Map
-            final Map<String, dynamic> messageMap;
-            if (msgData is Map<String, dynamic>) {
-              messageMap = msgData;
-            } else if (msgData is String) {
-              // Si es String, intentar parsearlo como JSON
-              debugPrint(
-                '[ChatScreen] Message data is String, skipping: $msgData',
-              );
-              return;
-            } else {
-              debugPrint(
-                '[ChatScreen] Unknown message data type: ${msgData.runtimeType}',
-              );
-              return;
-            }
-
-            final newMessage = Message.fromJson(messageMap);
-            setState(() {
-              _messages.add(newMessage);
-            });
-            _scrollToBottom();
-
-            // Guardar en cache
-            ChatCache.addMessage(newMessage);
-          } catch (e) {
-            debugPrint('[ChatScreen] Error parsing message: $e');
-          }
+        final incoming = _parseIncomingChatMessage(message);
+        if (incoming != null) {
+          _upsertIncomingMessage(incoming);
         }
-      } else if (type == 'cancellation_request' ||
+      } else if (type == 'chat.message_read' || type == 'message_read') {
+        _handleMessageStatusEvent(message, isRead: true);
+      } else if (type == 'chat.message_delivered' || type == 'message_delivered') {
+        _handleMessageStatusEvent(message, isRead: false);
+      } else if (type == 'incident_status_changed' || type == 'incident.status_changed') {
+        final data = (message['data'] is Map<String, dynamic>)
+            ? message['data'] as Map<String, dynamic>
+            : message;
+        final reason = data['reason']?.toString();
+        if (reason == 'mutual_cancellation') {
+          unawaited(_handleCancellationApprovedAndRedirect());
+        }
+      } else if (type == 'cancellation.requested' ||
+          type == 'cancellation.approved' ||
+          type == 'cancellation.rejected' ||
+          type == 'cancellation_request' ||
           type == 'cancellation_response') {
         // Recargar estado de cancelación cuando llega notificación WS
-        _loadPendingCancellation();
+        _handleCancellationRealtimeEvent(type!);
       }
     });
 
@@ -450,6 +444,176 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   // ─── Envío de mensajes ────────────────────────────────────────────────────
+
+  void _handleCancellationRealtimeEvent(String type) {
+    if (type == 'cancellation.requested' || type == 'cancellation_request') {
+      _loadPendingCancellation();
+      return;
+    }
+
+    if (type == 'cancellation.rejected') {
+      if (mounted) {
+        setState(() => _pendingCancellation = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('❌ Cancelación rechazada. El servicio continúa.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (type == 'cancellation.approved' || type == 'cancellation_response') {
+      unawaited(_handleCancellationApprovedAndRedirect());
+      return;
+      if (mounted) {
+        setState(() => _pendingCancellation = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Cancelación aprobada. Volviendo a solicitudes...'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Future.delayed(const Duration(milliseconds: 900), () {
+          if (mounted) context.go('/incidents');
+        });
+      }
+    }
+  }
+
+  Future<void> _handleCancellationApprovedAndRedirect() async {
+    if (!mounted || _redirectingAfterCancellation) return;
+    _redirectingAfterCancellation = true;
+
+    setState(() => _pendingCancellation = null);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ Cancelación aprobada. Volviendo a solicitudes...'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
+
+    // Forzar refresh para evitar estado viejo al volver a la lista.
+    unawaited(ref.read(incidentsProvider.notifier).loadIncidents());
+
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (mounted) context.go('/incidents');
+    _redirectingAfterCancellation = false;
+  }
+
+  int? _extractIncidentId(Map<String, dynamic> message) {
+    final topLevel = (message['incident_id'] as num?)?.toInt();
+    if (topLevel != null) return topLevel;
+
+    final payload = message['payload'];
+    if (payload is Map<String, dynamic>) {
+      final payloadIncidentId = (payload['incident_id'] as num?)?.toInt();
+      if (payloadIncidentId != null) return payloadIncidentId;
+    }
+
+    final data = message['data'];
+    if (data is Map<String, dynamic>) {
+      return (data['incident_id'] as num?)?.toInt();
+    }
+
+    return null;
+  }
+
+  Message? _parseIncomingChatMessage(Map<String, dynamic> message) {
+    try {
+      final legacy = message['message'];
+      if (legacy is Map<String, dynamic>) {
+        return Message.fromJson(legacy);
+      }
+
+      final payload = message['payload'];
+      if (payload is Map<String, dynamic>) {
+        final messageId = (payload['message_id'] as num?)?.toInt();
+        final incidentId = (payload['incident_id'] as num?)?.toInt();
+        final senderId = (payload['sender_id'] as num?)?.toInt();
+        if (messageId == null || incidentId == null || senderId == null) {
+          return null;
+        }
+
+        return Message.fromJson({
+          'id': messageId,
+          'incident_id': incidentId,
+          'sender_id': senderId,
+          'sender_name': payload['sender_name'],
+          'sender_role': payload['sender_role'],
+          'message': payload['content'] ?? '',
+          'message_type': payload['message_type'] ?? 'text',
+          'created_at': _normalizeServerTimestamp(payload['sent_at'] ?? message['timestamp']),
+          'sent_at': _normalizeServerTimestamp(payload['sent_at'] ?? message['timestamp']),
+          'is_read': false,
+        });
+      }
+    } catch (e) {
+      debugPrint('[ChatScreen] Error parsing incoming chat event: $e');
+    }
+    return null;
+  }
+
+  void _upsertIncomingMessage(Message newMessage) {
+    setState(() {
+      final messageId = newMessage.id;
+      final existingIndex = messageId == null
+          ? -1
+          : _messages.indexWhere((m) => m.id == messageId);
+
+      if (existingIndex != -1) {
+        _messages[existingIndex] = newMessage;
+      } else {
+        _messages.add(newMessage);
+      }
+
+      _messages.sort(
+        (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
+          b.createdAt ?? DateTime.now(),
+        ),
+      );
+    });
+
+    _scrollToBottom();
+    ChatCache.addMessage(newMessage);
+  }
+
+  void _handleMessageStatusEvent(
+    Map<String, dynamic> message, {
+    required bool isRead,
+  }) {
+    final payload = (message['payload'] is Map<String, dynamic>)
+        ? message['payload'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final src = payload.isNotEmpty
+        ? payload
+        : ((message['data'] is Map<String, dynamic>)
+              ? message['data'] as Map<String, dynamic>
+              : message);
+
+    final messageId = (src['message_id'] as num?)?.toInt();
+    if (messageId == null) return;
+
+    final timestampRaw = isRead ? src['read_at'] : src['delivered_at'];
+    final eventDate = timestampRaw is String && timestampRaw.trim().isNotEmpty
+        ? DateTime.parse(_normalizeServerTimestamp(timestampRaw)).toLocal()
+        : DateTime.now();
+
+    setState(() {
+      final index = _messages.indexWhere((entry) => entry.id == messageId);
+      if (index == -1) return;
+
+      final current = _messages[index];
+      _messages[index] = current.copyWith(
+        status: isRead ? MessageStatus.read : MessageStatus.delivered,
+        readAt: isRead ? eventDate : current.readAt,
+        deliveredAt: isRead ? current.deliveredAt : eventDate,
+        isRead: isRead ? true : current.isRead,
+      );
+    });
+  }
 
   /// Handle text input changes for typing indicator (Task 2.1, 2.2)
   void _onTextChanged(String text) {
@@ -518,7 +682,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (index != -1) {
           _messages[index] = sentMessage.copyWith(
             status: MessageStatus.sent,
-            sentAt: DateTime.now(),
+            sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
           );
         }
       });
@@ -586,7 +750,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       setState(() {
         _messages[messageIndex] = sentMessage.copyWith(
           status: MessageStatus.sent,
-          sentAt: DateTime.now(),
+          sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
         );
       });
 
@@ -805,6 +969,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
       if (mounted) {
         if (accept) {
+          unawaited(_handleCancellationApprovedAndRedirect());
+          return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -816,7 +982,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           );
           // Volver atrás después de un momento
           Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) Navigator.of(context).pop();
+            if (mounted) context.go('/incidents');
           });
         } else {
           setState(() => _pendingCancellation = null);
@@ -902,6 +1068,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return '${date.day}/${date.month} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
     }
     return '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _normalizeServerTimestamp(dynamic rawValue) {
+    final raw = rawValue == null ? '' : rawValue.toString().trim();
+    if (raw.isEmpty) return DateTime.now().toUtc().toIso8601String();
+    final hasTimezone = RegExp(r'([zZ]|[+\-]\d{2}:\d{2})$').hasMatch(raw);
+    return hasTimezone ? raw : '${raw}Z';
   }
 
   // ─── Separadores de día (Task 3.4) ────────────────────────────────────────
@@ -1435,10 +1608,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// Build typing indicator widget (Task 2.1)
   Widget _buildTypingIndicator() {
-    final chatRealtimeService = ref.watch(chatRealtimeServiceProvider);
-    final typingText = chatRealtimeService.getTypingIndicatorText(
-      widget.incidentId,
-    );
+    final typingUsers = ref.watch(chatTypingUsersProvider(widget.incidentId));
+    final typingText = _buildTypingText(typingUsers);
 
     if (typingText.isEmpty) {
       return const SizedBox.shrink();
@@ -1482,6 +1653,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  String _buildTypingText(List<String> typingUsers) {
+    if (typingUsers.isEmpty) return '';
+    return 'escribiendo';
   }
 
   Widget _buildSystemMessage(Message message) {

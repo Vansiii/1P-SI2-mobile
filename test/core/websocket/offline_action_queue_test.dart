@@ -1,25 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:merchanic_repair/core/websocket/offline_action_queue.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fake WebSocketService for testing
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FakeWebSocketService {
-  bool isConnected;
-  final List<Map<String, dynamic>> sentMessages = [];
-
-  _FakeWebSocketService({this.isConnected = true});
-
-  void send(Map<String, dynamic> message) {
-    sentMessages.add(message);
-  }
-}
-
-// We need a real WebSocketService-compatible interface for processQueue.
-// Since OfflineActionQueue depends on WebSocketService directly, we test
-// the queue logic independently and verify the contract.
-
 void main() {
   group('OfflineActionQueue', () {
     late OfflineActionQueue queue;

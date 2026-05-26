@@ -9,11 +9,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/features/tracking/providers/tracking_realtime_provider.dart';
+import 'package:merchanic_repair/widgets/map/map_compass_button.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public widget
@@ -128,10 +129,10 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
       return _PermissionPrompt(onRequest: _requestLocationPermission);
     }
 
-    // Default center: Bogotá, Colombia — fallback when no location yet.
+    // Default center: Cochabamba — fallback when no location yet.
     final center = (trackingState?.hasLocation ?? false)
         ? LatLng(trackingState!.latitude!, trackingState.longitude!)
-        : const LatLng(4.7110, -74.0721);
+        : const LatLng(-17.3935, -66.1570);
 
     final markers = <Marker>[];
 
@@ -139,8 +140,9 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
       markers.add(
         Marker(
           point: LatLng(trackingState!.latitude!, trackingState.longitude!),
-          width: 48,
-          height: 48,
+          width: 50,
+          height: 65,
+          alignment: Alignment.bottomCenter,
           child: _TechnicianMarker(
             heading: trackingState.heading,
             accuracy: trackingState.accuracy,
@@ -149,43 +151,60 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
       );
     }
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: center,
-        initialZoom: widget.initialZoom,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.all,
-        ),
-      ),
+    return Stack(
       children: [
-        // OpenStreetMap tile layer — no API key required.
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.mecanicoYa.app',
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: widget.initialZoom,
+            minZoom: 5.0,
+            maxZoom: 19.0,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all,
+            ),
+          ),
+          children: [
+            // OpenStreetMap tile layer.
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.mecanicoYa.app',
+            ),
+
+            // Accuracy circle (GPS precision indicator).
+            if ((trackingState?.hasLocation ?? false) &&
+                trackingState!.accuracy != null)
+              CircleLayer(
+                circles: [
+                  CircleMarker(
+                    point: LatLng(
+                      trackingState.latitude!,
+                      trackingState.longitude!,
+                    ),
+                    radius: trackingState.accuracy!,
+                    useRadiusInMeter: true,
+                    color: AppColors.primary.withValues(alpha: 0.10),
+                    borderColor: AppColors.primary.withValues(alpha: 0.35),
+                    borderStrokeWidth: 1.5,
+                  ),
+                ],
+              ),
+
+            // Technician marker.
+            MarkerLayer(markers: markers),
+          ],
         ),
 
-        // Accuracy circle (GPS precision indicator).
-        if ((trackingState?.hasLocation ?? false) &&
-            trackingState!.accuracy != null)
-          CircleLayer(
-            circles: [
-              CircleMarker(
-                point: LatLng(
-                  trackingState.latitude!,
-                  trackingState.longitude!,
-                ),
-                radius: trackingState.accuracy!,
-                useRadiusInMeter: true,
-                color: AppColors.primary.withValues(alpha: 0.12),
-                borderColor: AppColors.primary.withValues(alpha: 0.4),
-                borderStrokeWidth: 1,
-              ),
-            ],
+        // Compass button (shown when rotated)
+        Positioned(
+          top: 12,
+          right: 12,
+          child: MapCompassButton(
+            mapController: _mapController,
+            top: 0,
+            right: 0,
           ),
-
-        // Technician marker.
-        MarkerLayer(markers: markers),
+        ),
       ],
     );
   }
@@ -203,26 +222,80 @@ class _TechnicianMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Transform.rotate(
-      // Rotate icon to show heading direction when available.
-      angle: heading != null ? (heading! * 3.14159265 / 180) : 0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.primary,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+    return SizedBox(
+      width: 50,
+      height: 65,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Transform.rotate(
+                angle: heading != null ? (heading! * 3.14159265 / 180) : 0,
+                child: const Icon(
+                  Icons.navigation_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
             ),
-          ],
-        ),
-        child: const Icon(Icons.directions_car, color: Colors.white, size: 24),
+          ),
+          Positioned(
+            top: 38,
+            child: CustomPaint(
+              size: const Size(20, 14),
+              painter: _PinTailPainter(color: AppColors.primary),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+class _PinTailPainter extends CustomPainter {
+  final Color color;
+
+  _PinTailPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.2)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+
+    final path = Path();
+    path.moveTo(size.width * 0.15, 0);
+    path.lineTo(size.width * 0.85, 0);
+    path.lineTo(size.width * 0.5, size.height);
+    path.close();
+
+    canvas.drawPath(path, shadowPaint);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,23 +313,23 @@ class _TrackingInfoBar extends StatelessWidget {
     final sessionLabel = _sessionLabel(state.sessionStatus);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.borderLight),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          // Session status indicator.
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: sessionColor,
-              shape: BoxShape.circle,
-            ),
-          ),
+          // Session status pulse indicator.
+          _PulsingDot(color: sessionColor),
           const SizedBox(width: 8),
           Text(
             sessionLabel,
@@ -271,43 +344,28 @@ class _TrackingInfoBar extends StatelessWidget {
 
           // ETA chip.
           if (state.etaMinutes != null) ...[
-            const Icon(Icons.access_time, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              'ETA: ${state.etaMinutes} min',
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textMain,
-              ),
+            _InfoPill(
+              icon: Icons.access_time_rounded,
+              text: '${state.etaMinutes} min',
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
 
           // Distance chip.
-          if (state.distanceMeters != null) ...[
-            const Icon(Icons.straighten, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              _formatDistance(state.distanceMeters!),
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textMain,
-              ),
+          if (state.distanceMeters != null)
+            _InfoPill(
+              icon: Icons.straighten_rounded,
+              text: _formatDistance(state.distanceMeters!),
             ),
-          ],
 
-          // Coordinates fallback when no ETA/distance yet.
+          // Coordinates fallback.
           if (state.etaMinutes == null &&
               state.distanceMeters == null &&
-              state.hasLocation) ...[
+              state.hasLocation)
             Text(
-              '${state.latitude!.toStringAsFixed(4)}, '
-              '${state.longitude!.toStringAsFixed(4)}',
-              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+              '${state.latitude!.toStringAsFixed(4)}, ${state.longitude!.toStringAsFixed(4)}',
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
-          ],
         ],
       ),
     );
@@ -403,3 +461,94 @@ class _PermissionPrompt extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small UI helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Animated pulsing dot for session status.
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot({required this.color});
+  final Color color;
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Opacity(
+        opacity: _anim.value,
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: widget.color,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact info pill for ETA / distance.
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.primary),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

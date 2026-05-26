@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'dart:ui' as ui;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,10 +10,12 @@ import 'package:merchanic_repair/data/models/incident.dart';
 import 'package:merchanic_repair/services/api_service.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
 import 'package:merchanic_repair/features/chat/presentation/chat_screen.dart';
+import 'package:merchanic_repair/widgets/map/smart_map_marker.dart';
+import 'package:merchanic_repair/widgets/map/map_compass_button.dart';
 
 class IncidentTrackingMapScreen extends ConsumerStatefulWidget {
   final int incidentId;
-  final String userRole; // 'client', 'technician', 'workshop'
+  final String userRole;
 
   const IncidentTrackingMapScreen({
     super.key,
@@ -27,7 +29,8 @@ class IncidentTrackingMapScreen extends ConsumerStatefulWidget {
 }
 
 class _IncidentTrackingMapScreenState
-    extends ConsumerState<IncidentTrackingMapScreen> {
+    extends ConsumerState<IncidentTrackingMapScreen>
+    with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   bool _mapReady = false;
 
@@ -40,7 +43,6 @@ class _IncidentTrackingMapScreenState
   double? _distanceKm;
   int? _etaMinutes;
 
-  // Centro inicial por defecto (Cochabamba) hasta que lleguen los datos
   static const LatLng _defaultCenter = LatLng(-17.3935, -66.1570);
 
   @override
@@ -104,16 +106,21 @@ class _IncidentTrackingMapScreenState
 
       _calculateDistance();
 
-      // Centrar el mapa solo después de que el widget esté renderizado
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _mapReady) _centerMapOnLocations();
       });
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingData = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error al cargar datos: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar datos: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       }
     }
   }
@@ -136,36 +143,17 @@ class _IncidentTrackingMapScreenState
     if (points.isEmpty) return;
 
     if (points.length == 1) {
-      _mapController.move(points[0], 14.0);
+      _mapController.move(points[0], 15.0);
       return;
     }
 
-    double minLat = points[0].latitude;
-    double maxLat = points[0].latitude;
-    double minLng = points[0].longitude;
-    double maxLng = points[0].longitude;
-
-    for (final p in points) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-
-    final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
-    final maxDiff = (maxLat - minLat) > (maxLng - minLng)
-        ? (maxLat - minLat)
-        : (maxLng - minLng);
-
-    double zoom = 14.0;
-    if (maxDiff > 0.1)
-      zoom = 11.0;
-    else if (maxDiff > 0.05)
-      zoom = 12.0;
-    else if (maxDiff > 0.02)
-      zoom = 13.0;
-
-    _mapController.move(center, zoom);
+    final bounds = LatLngBounds.fromPoints(points);
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: const EdgeInsets.fromLTRB(60, 160, 60, 80),
+      ),
+    );
   }
 
   void _connectWebSocket() async {
@@ -237,89 +225,124 @@ class _IncidentTrackingMapScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Seguimiento en Tiempo Real'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'Seguimiento en Tiempo Real',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
+          ),
+        ),
+        foregroundColor: AppColors.primary,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.my_location_rounded),
+            onPressed: _centerMapOnLocations,
+            tooltip: 'Centrar mapa',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: _loadIncidentData,
+            tooltip: 'Actualizar',
           ),
         ],
       ),
       body: Stack(
         children: [
-          // El mapa siempre se renderiza primero
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _clientLocation ?? _defaultCenter,
               initialZoom: 14.0,
               minZoom: 5.0,
-              maxZoom: 18.0,
+              maxZoom: 19.0,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all,
+              ),
               onMapReady: () {
                 _mapReady = true;
-                // Centrar en las ubicaciones una vez el mapa esté listo
                 if (!_isLoadingData) _centerMapOnLocations();
               },
             ),
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.mecanicoya',
+                userAgentPackageName: 'com.mecanicoYa.app',
               ),
+              if (_technicianLocation != null && _clientLocation != null)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [_technicianLocation!, _clientLocation!],
+                      strokeWidth: 4.0,
+                      color: AppColors.primary.withValues(alpha: 0.7),
+                      borderStrokeWidth: 2.0,
+                      borderColor: Colors.white,
+                      pattern: StrokePattern.dotted(),
+                    ),
+                  ],
+                ),
               MarkerLayer(markers: _buildMarkers()),
             ],
           ),
-
-          // Overlay de carga (semitransparente, no bloquea el mapa)
           if (_isLoadingData)
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: LinearProgressIndicator(
-                backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                backgroundColor: Colors.transparent,
                 color: AppColors.primary,
+                minHeight: 3,
               ),
             ),
-
-          // Panel de información
-          Positioned(top: 16, left: 16, right: 16, child: _buildInfoPanel()),
-
-          // Botón de chat
           Positioned(
-            bottom: 16,
+            top: MediaQuery.of(context).padding.top + 70,
             right: 16,
-            child: FloatingActionButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) =>
-                        ChatScreen(incidentId: widget.incidentId),
-                  ),
-                );
-              },
-              backgroundColor: AppColors.primary,
-              heroTag: 'chat_button',
-              child: const Icon(Icons.chat_bubble, size: 28),
+            child: MapCompassButton(
+              mapController: _mapController,
+              top: 0,
+              right: 0,
             ),
           ),
-
-          // Botón centrar
           Positioned(
-            bottom: 90,
+            bottom: 24,
             right: 16,
-            child: FloatingActionButton.small(
-              onPressed: _centerMapOnLocations,
-              backgroundColor: Colors.white,
-              heroTag: 'center_button',
-              child: const Icon(
-                Icons.center_focus_strong,
-                color: AppColors.primary,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _FloatingMapButton(
+                  icon: Icons.chat_bubble_rounded,
+                  color: AppColors.primary,
+                  heroTag: 'chat_button',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            ChatScreen(incidentId: widget.incidentId),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _FloatingMapButton(
+                  icon: Icons.center_focus_strong_rounded,
+                  color: Colors.white,
+                  iconColor: AppColors.primary,
+                  heroTag: 'center_button',
+                  onPressed: _centerMapOnLocations,
+                  isSmall: true,
+                ),
+              ],
             ),
           ),
         ],
@@ -330,38 +353,50 @@ class _IncidentTrackingMapScreenState
   List<Marker> _buildMarkers() {
     final markers = <Marker>[];
 
-    // Cliente (siempre visible si existe)
     if (_clientLocation != null) {
       markers.add(
-        _buildMarker(
+        Marker(
           point: _clientLocation!,
-          color: Colors.red,
-          icon: Icons.person_pin_circle,
-          label: 'Cliente',
+          width: 50,
+          height: 65,
+          alignment: Alignment.bottomCenter,
+          child: SmartMapMarker(
+            role: MarkerRole.client,
+            label: 'Cliente',
+            onTap: () => _showMarkerDetails(MarkerRole.client),
+          ),
         ),
       );
     }
 
-    // Taller (siempre visible si existe)
     if (_workshopLocation != null) {
       markers.add(
-        _buildMarker(
+        Marker(
           point: _workshopLocation!,
-          color: Colors.purple,
-          icon: Icons.build_circle,
-          label: 'Taller',
+          width: 50,
+          height: 65,
+          alignment: Alignment.bottomCenter,
+          child: SmartMapMarker(
+            role: MarkerRole.workshop,
+            label: 'Taller',
+            onTap: () => _showMarkerDetails(MarkerRole.workshop),
+          ),
         ),
       );
     }
 
-    // Técnico (solo si está asignado y tiene ubicación)
     if (_technicianLocation != null) {
       markers.add(
-        _buildMarker(
+        Marker(
           point: _technicianLocation!,
-          color: Colors.blue,
-          icon: Icons.directions_car,
-          label: 'Técnico',
+          width: 50,
+          height: 65,
+          alignment: Alignment.bottomCenter,
+          child: SmartMapMarker(
+            role: MarkerRole.technician,
+            label: _getTechnicianName().split(' ').first,
+            onTap: () => _showMarkerDetails(MarkerRole.technician),
+          ),
         ),
       );
     }
@@ -369,418 +404,228 @@ class _IncidentTrackingMapScreenState
     return markers;
   }
 
-  Marker _buildMarker({
-    required LatLng point,
+  void _showMarkerDetails(MarkerRole role) {
+    String title;
+    String subtitle;
+    String details;
+    Color color;
+
+    switch (role) {
+      case MarkerRole.client:
+        title = 'Ubicación del Cliente';
+        subtitle = _incident?.direccionReferencia ?? 'Dirección no disponible';
+        details = 'Lat: ${_clientLocation?.latitude.toStringAsFixed(6) ?? "N/A"}\nLng: ${_clientLocation?.longitude.toStringAsFixed(6) ?? "N/A"}';
+        color = const Color(0xFFEA4335);
+      case MarkerRole.technician:
+        title = _getTechnicianName();
+        subtitle = 'Técnico asignado';
+        final eta = _etaMinutes != null ? '$_etaMinutes min' : 'Calculando...';
+        final dist = _distanceKm != null ? '${_distanceKm!.toStringAsFixed(1)} km' : '';
+        details = 'ETA: $eta${dist.isNotEmpty ? ' • $dist' : ''}';
+        color = const Color(0xFF4285F4);
+      case MarkerRole.workshop:
+        title = _incident?.taller?['workshop_name'] ?? 'Taller';
+        subtitle = 'Taller asignado';
+        details = 'Lat: ${_workshopLocation?.latitude.toStringAsFixed(6) ?? "N/A"}\nLng: ${_workshopLocation?.longitude.toStringAsFixed(6) ?? "N/A"}';
+        color = const Color(0xFF9333EA);
+    }
+
+    _showDetailsBottomSheet(title: title, subtitle: subtitle, details: details, color: color);
+  }
+
+  void _showDetailsBottomSheet({
+    required String title,
+    required String subtitle,
+    required String details,
     required Color color,
-    required IconData icon,
-    required String label,
   }) {
-    return Marker(
-      point: point,
-      width: 100,
-      height: 120,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          // Pin pointer (parte inferior)
-          Positioned(
-            bottom: 0,
-            child: CustomPaint(
-              size: const Size(40, 50),
-              painter: _PinPainter(color: color),
-            ),
-          ),
-          // Círculo con icono (parte superior)
-          Positioned(
-            top: 0,
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: color, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 26),
-                ),
-              ),
-            ),
-          ),
-          // Label con fondo
-          Positioned(
-            bottom: 55,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ),
-        ],
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _MarkerDetailsSheet(
+        title: title,
+        subtitle: subtitle,
+        details: details,
+        color: color,
+        onClose: () => Navigator.pop(context),
       ),
     );
   }
+}
 
-  Widget _buildInfoPanel() {
-    final bool hasTechnician = _technicianLocation != null;
+class _MarkerDetailsSheet extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String details;
+  final Color color;
+  final VoidCallback onClose;
 
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Estado + distancia
-            Row(
+  const _MarkerDetailsSheet({
+    required this.title,
+    required this.subtitle,
+    required this.details,
+    required this.color,
+    required this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(_incident?.estadoActual ?? ''),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _getStatusText(_incident?.estadoActual ?? ''),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [color, color.withValues(alpha: 0.7)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Icon(Icons.location_on, color: Colors.white, size: 26),
                     ),
-                  ),
-                ),
-                const Spacer(),
-                if (_distanceKm != null && hasTechnician)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.3),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.straighten,
-                          size: 16,
-                          color: AppColors.primary,
+                    IconButton(
+                      onPressed: onClose,
+                      icon: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${_distanceKm!.toStringAsFixed(1)} km',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Técnico
-            if (_incident?.tecnico != null || _incident?.tecnicoId != null) ...[
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 18,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Técnico asignado',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        Text(
-                          _getTechnicianName(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.orange.withValues(alpha: 0.3),
-                  ),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 18, color: Colors.orange),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Esperando asignación de técnico',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        child: Icon(Icons.close, color: Colors.grey.shade600, size: 20),
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            // ETA
-            if (_etaMinutes != null && hasTechnician) ...[
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(
-                      Icons.access_time,
-                      size: 18,
-                      color: Colors.green,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tiempo estimado',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text(
-                        '$_etaMinutes min',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            // Dirección
-            Row(
-              children: [
+                const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
+                    color: color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.2)),
                   ),
-                  child: const Icon(
-                    Icons.location_on,
-                    size: 18,
-                    color: Colors.red,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Ubicación del servicio',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text(
-                        _incident?.direccionReferencia ??
-                            'Ubicación no disponible',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                  child: Text(
+                    details,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+        ],
       ),
     );
   }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pendiente':
-        return Colors.orange;
-      case 'asignado':
-        return Colors.blue;
-      case 'en_camino':
-        return Colors.purple;
-      case 'en_proceso':
-        return Colors.indigo;
-      case 'en_sitio':
-        return Colors.green;
-      case 'resuelto':
-        return Colors.teal;
-      case 'cancelado':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _getStatusText(String status) {
-    switch (status.toLowerCase()) {
-      case 'pendiente':
-        return 'PENDIENTE';
-      case 'asignado':
-        return 'ASIGNADO';
-      case 'en_camino':
-        return 'EN CAMINO';
-      case 'en_proceso':
-        return 'EN PROCESO';
-      case 'en_sitio':
-        return 'EN SITIO';
-      case 'resuelto':
-        return 'RESUELTO';
-      case 'cancelado':
-        return 'CANCELADO';
-      case 'sin_taller_disponible':
-        return 'SIN TALLER DISPONIBLE';
-      default:
-        return status.toUpperCase();
-    }
-  }
 }
 
-// Custom painter para dibujar el pin del marcador
-class _PinPainter extends CustomPainter {
+class _FloatingMapButton extends StatelessWidget {
+  final IconData icon;
   final Color color;
+  final Color iconColor;
+  final String heroTag;
+  final VoidCallback onPressed;
+  final bool isSmall;
 
-  _PinPainter({required this.color});
+  const _FloatingMapButton({
+    required this.icon,
+    required this.color,
+    required this.heroTag,
+    required this.onPressed,
+    this.iconColor = Colors.white,
+    this.isSmall = false,
+  });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-
-    final path = ui.Path();
-
-    // Dibujar forma de pin (gota invertida)
-    final centerX = size.width / 2;
-    final topY = size.height * 0.3;
-    final bottomY = size.height;
-    final radius = size.width * 0.35;
-
-    // Círculo superior
-    path.addOval(
-      Rect.fromCircle(center: Offset(centerX, topY), radius: radius),
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color == Colors.white
+                ? Colors.black.withValues(alpha: 0.15)
+                : color.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: isSmall
+          ? FloatingActionButton.small(
+              onPressed: onPressed,
+              backgroundColor: color,
+              heroTag: heroTag,
+              elevation: 0,
+              child: Icon(icon, color: iconColor, size: 20),
+            )
+          : FloatingActionButton(
+              onPressed: onPressed,
+              backgroundColor: color,
+              heroTag: heroTag,
+              elevation: 0,
+              child: Icon(icon, color: iconColor, size: 26),
+            ),
     );
-
-    // Triángulo inferior (punta del pin)
-    path.moveTo(centerX - radius * 0.6, topY + radius * 0.5);
-    path.lineTo(centerX, bottomY);
-    path.lineTo(centerX + radius * 0.6, topY + radius * 0.5);
-    path.close();
-
-    // Dibujar sombra
-    canvas.drawPath(path.shift(const Offset(0, 2)), shadowPaint);
-
-    // Dibujar pin
-    canvas.drawPath(path, paint);
-
-    // Borde blanco
-    final borderPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawPath(path, borderPaint);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -43,8 +43,8 @@ class ChatRealtimeService {
   Future<void> sendTypingStopIndicator(int incidentId) async {
     try {
       await _apiService.post(
-        '${ApiConfig.chat}/incidents/$incidentId/typing',
-        data: {'typing': false},
+        '${ApiConfig.chat}/incidents/$incidentId/typing/stop',
+        data: {},
       );
       debugPrint(
         '[ChatRealtimeService] Sent stop typing indicator for $incidentId',
@@ -71,16 +71,7 @@ class ChatRealtimeService {
       return '';
     }
 
-    if (typingUsers.length == 1) {
-      return '${typingUsers[0]} está escribiendo...';
-    }
-
-    if (typingUsers.length == 2) {
-      return '${typingUsers[0]} y ${typingUsers[1]} están escribiendo...';
-    }
-
-    final remaining = typingUsers.length - 2;
-    return '${typingUsers[0]}, ${typingUsers[1]} y $remaining más están escribiendo...';
+    return 'escribiendo';
   }
 
   // ── Read receipts (Task 3.5, 3.6) ─────────────────────────────────────────

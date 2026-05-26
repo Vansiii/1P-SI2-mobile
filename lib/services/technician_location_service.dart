@@ -3,9 +3,16 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:merchanic_repair/data/services/api_service.dart';
 
+/// Callback type for sending location via WebSocket.
+/// Returns true if the message was successfully sent via WebSocket.
+typedef WebSocketSendCallback = bool Function(Map<String, dynamic> message);
+
 /// Servicio para gestionar el seguimiento de ubicación continuo del técnico
 /// Este servicio se activa automáticamente cuando un técnico inicia sesión
-/// y envía actualizaciones de ubicación periódicas al backend
+/// y envía actualizaciones de ubicación periódicas al backend.
+///
+/// Envía ubicación por WebSocket (baja latencia, tiempo real) con
+/// HTTP POST como fallback para persistencia en base de datos.
 class TechnicianLocationService {
   final ApiService _apiService;
   Timer? _locationTimer;
@@ -13,6 +20,12 @@ class TechnicianLocationService {
   bool _isTracking = false;
   Position? _lastPosition;
   DateTime? _lastUpdateTime;
+
+  /// Optional WebSocket send callback for real-time location delivery.
+  WebSocketSendCallback? _wsSendCallback;
+
+  /// Current incident ID the technician is assigned to (for WebSocket routing).
+  int? currentIncidentId;
 
   // Configuración de tracking
   static const Duration _updateInterval = Duration(seconds: 30);
@@ -25,6 +38,18 @@ class TechnicianLocationService {
 
   bool get isTracking => _isTracking;
   Position? get lastPosition => _lastPosition;
+
+  /// Register a WebSocket send callback for real-time location delivery.
+  /// Called by the auth flow when the WebSocket connection is established.
+  void setWebSocketSender(WebSocketSendCallback sender) {
+    _wsSendCallback = sender;
+  }
+
+  /// Clear the WebSocket sender (e.g., on disconnect).
+  void clearWebSocketSender() {
+    _wsSendCallback = null;
+    currentIncidentId = null;
+  }
 
   /// Iniciar seguimiento de ubicación continuo
   /// Este método debe llamarse cuando el técnico inicia sesión
@@ -171,6 +196,40 @@ class TechnicianLocationService {
     );
   }
 
+  /// Attempt to send location via WebSocket for real-time delivery.
+  /// Returns true if the WebSocket message was successfully queued.
+  bool _trySendViaWebSocket(Position position) {
+    if (_wsSendCallback == null) return false;
+
+    try {
+      final message = {
+        'type': 'location_update',
+        'location': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracy': position.accuracy,
+          'speed': position.speed,
+          'heading': position.heading,
+        },
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+        'incident_id': currentIncidentId,
+      };
+
+      final sent = _wsSendCallback!(message);
+      if (!sent) {
+        debugPrint(
+          'TechnicianLocationService: WebSocket not connected, will use HTTP fallback',
+        );
+      }
+      return sent;
+    } catch (e) {
+      debugPrint(
+        'TechnicianLocationService: Error sending location via WebSocket: $e',
+      );
+      return false;
+    }
+  }
+
   /// Enviar ubicación actual al backend
   Future<void> _sendCurrentLocation() async {
     try {
@@ -205,21 +264,29 @@ class TechnicianLocationService {
       }
 
       print('📤 TechnicianLocationService: Enviando ubicación al backend...');
-      // Enviar ubicación al backend usando el endpoint de real-time
-      await _apiService.updateTechnicianLocation(
-        latitude: position.latitude,
-        longitude: position.longitude,
-        accuracy: position.accuracy,
-        speed: position.speed,
-        heading: position.heading,
-        recordedAt: DateTime.now(),
-      );
+
+      // Send via WebSocket for real-time delivery (low latency, primary channel)
+      final wsSent = _trySendViaWebSocket(position);
+
+      // Fallback to HTTP POST only if WebSocket is not available
+      if (!wsSent) {
+        await _apiService.updateTechnicianLocation(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          speed: position.speed,
+          heading: position.heading,
+          recordedAt: DateTime.now(),
+        );
+      }
 
       _lastPosition = position;
       _lastUpdateTime = DateTime.now();
 
+      final method = wsSent ? 'WS' : 'HTTP';
       print(
-        '✅ TechnicianLocationService: Ubicación enviada exitosamente: (${position.latitude}, ${position.longitude}) - Precisión: ${position.accuracy}m',
+        '✅ TechnicianLocationService: Ubicación enviada ($method): '
+        '(${position.latitude}, ${position.longitude}) - Precisión: ${position.accuracy}m',
       );
     } catch (e, stackTrace) {
       print('❌ TechnicianLocationService: Error al enviar ubicación: $e');

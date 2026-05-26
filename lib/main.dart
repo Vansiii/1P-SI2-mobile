@@ -122,10 +122,9 @@ class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
 
     // Escuchar notificaciones que abren la app (background/terminated)
     PushNotificationService().onMessageReceived.listen((message) {
-      // Solo manejar mensajes que abrieron la app (no foreground)
-      // El foreground ya se maneja en _handleForegroundMessage
       if (mounted) {
-        NotificationHandler.handleNotification(message, context);
+        final router = ref.read(goRouterProvider);
+        NotificationHandler.handleNotification(message, router);
       }
     });
   }

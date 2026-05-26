@@ -9,16 +9,16 @@
 //   reconnection (offline queue management).
 // - Exposes [getStream<T>] for subscribing to a specific event type.
 // - Disposes all resources cleanly via [dispose].
+//
+// UNIFIED WS: Accepts WebSocketService from Riverpod provider so it uses
+// the same active connection as the _websocket_ providers.
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:merchanic_repair/data/services/storage_service.dart';
 
 import '../models/realtime_event.dart';
-// Use the legacy WebSocketService that actually connects to WebSocket endpoints
 import '../../services/websocket_service.dart';
-// Import ConnectionStatus for connection state handling
 import '../websocket/connection_status.dart';
 
 // ── EventCache ────────────────────────────────────────────────────────────────
@@ -75,10 +75,9 @@ class EventCache {
 /// ```
 class EventDispatcherService {
   EventDispatcherService({
-    WebSocketService? webSocketService,
+    required WebSocketService webSocketService,
     EventCache? cache,
-  }) : _webSocketService =
-           webSocketService ?? WebSocketService(StorageService()),
+  }) : _webSocketService = webSocketService,
        _cache = cache ?? EventCache();
 
   final WebSocketService _webSocketService;
@@ -201,6 +200,10 @@ class EventDispatcherService {
 
   /// Parses, validates, deduplicates, and routes a single raw event map.
   void _processRawEvent(Map<String, dynamic> raw) {
+    // Skip non-event messages (heartbeats, auth errors, etc.) that lack
+    // the real-time event envelope fields.
+    if (!raw.containsKey('event_type')) return;
+
     // ── 1. Parse ──────────────────────────────────────────────────────────
     RealTimeEvent event;
     try {

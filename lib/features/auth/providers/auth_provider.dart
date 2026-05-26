@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/websocket/connection_status.dart';
 import '../../../data/models/auth_response.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/repositories/auth_repository.dart';
@@ -8,6 +9,8 @@ import '../../../services/technician_location_service.dart';
 import '../../../services/websocket_service.dart';
 import '../../incidents/services/incident_realtime_service.dart';
 import '../../incidents/services/cancellation_realtime_service.dart';
+import '../../technicians/data/models/technician_model.dart';
+import '../../technicians/providers/technicians_websocket_provider.dart';
 import 'push_token_provider.dart';
 
 // Providers
@@ -72,6 +75,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
     this._ref,
   ) : super(AuthState()) {
     _checkAuthStatus();
+    _syncTechnicianIncidentToLocationService();
+  }
+
+  /// Watch the technicians WebSocket provider and sync the current incident ID
+  /// to the location service so the technician sends location via WS correctly.
+  void _syncTechnicianIncidentToLocationService() {
+    _ref.listen<List<TechnicianModel>>(
+      techniciansWebSocketProvider,
+      (prev, next) {
+        final user = state.user;
+        if (user == null || user.userType != 'technician') return;
+
+        // Find the current technician in the list
+        for (final tech in next) {
+          if (tech.id == user.id && tech.currentIncidentId != null) {
+            _locationService.currentIncidentId = tech.currentIncidentId;
+            return;
+          }
+        }
+        // No active incident found
+        _locationService.currentIncidentId = null;
+      },
+    );
   }
 
   // Check auth status on init
@@ -90,6 +116,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
             user: user,
             isLoading: false,
           );
+        }
+        // Conectar WebSocket al restaurar sesión
+        if (user != null) {
+          await _connectWebSocket(user);
         }
       } else {
         if (mounted) {
@@ -285,6 +315,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final endpoint = '/api/v1/ws/tracking/${user.id}';
       wsService.connect(endpoint, token: token);
 
+      // Wire up WebSocket sender for TechnicianLocationService real-time delivery
+      if (user.userType == 'technician') {
+        _locationService.setWebSocketSender((message) {
+          if (wsService.isConnected) {
+            wsService.send(message);
+            return true;
+          }
+          return false;
+        });
+        print('🔗 AuthNotifier: WebSocket sender wired for technician location');
+
+        // Listen for WebSocket disconnects to clear the sender for HTTP fallback
+        wsService.connectionStatus.listen((status) {
+          if (status == ConnectionStatus.disconnected) {
+            print(
+              '🔌 WebSocket disconnected — clearing location sender (HTTP fallback active)',
+            );
+            _locationService.clearWebSocketSender();
+          }
+        });
+      }
+
       print(
         '✅ AuthNotifier: WebSocket conectado para usuario ${user.id} (${user.userType})',
       );
@@ -326,6 +378,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   void _disconnectWebSocket() {
     try {
       final wsService = _ref.read(webSocketServiceProvider);
+      _locationService.clearWebSocketSender();
       wsService.disconnect();
       print('✅ AuthNotifier: WebSocket desconectado');
     } catch (e) {

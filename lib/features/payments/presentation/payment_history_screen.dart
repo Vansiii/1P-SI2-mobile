@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/payment_provider.dart';
-import 'payment_screen.dart';
 
 /// Pantalla de historial de pagos del cliente.
 class PaymentHistoryScreen extends ConsumerStatefulWidget {

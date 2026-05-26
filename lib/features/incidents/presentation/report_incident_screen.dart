@@ -884,9 +884,6 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
   // Widget para mostrar tarjeta de audio con reproducción
   Widget _buildAudioCard(int index, File audioFile) {
     final isPlaying = _playingAudioIndex == index && _isPlaying;
-    final duration = _formatDuration(
-      0,
-    ); // Placeholder, se puede mejorar con duración real
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1033,12 +1030,6 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
         _playingAudioIndex = _playingAudioIndex! - 1;
       }
     });
-  }
-
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    final remainingSeconds = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
   // Método para mostrar imagen completa

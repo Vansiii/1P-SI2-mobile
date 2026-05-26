@@ -12,11 +12,11 @@
 // logic through EventCache + EventValidator directly, and test the full
 // dispatcher pipeline using a thin wrapper that exposes the same streams.
 
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:merchanic_repair/core/models/realtime_event.dart';
 import 'package:merchanic_repair/core/services/event_dispatcher_service.dart';
+import 'package:merchanic_repair/data/services/storage_service.dart';
+import 'package:merchanic_repair/services/websocket_service.dart';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -232,22 +232,37 @@ void main() {
     // the events stream won't arrive here. Instead we test the queue length
     // property which is observable without a connection.
 
+    late WebSocketService wsService;
+
+    setUp(() {
+      wsService = WebSocketService(StorageService());
+    });
+
     test('offlineQueueLength starts at 0', () {
-      final dispatcher = EventDispatcherService(cache: EventCache());
+      final dispatcher = EventDispatcherService(
+        webSocketService: wsService,
+        cache: EventCache(),
+      );
       dispatcher.initialize();
       expect(dispatcher.offlineQueueLength, 0);
       dispatcher.dispose();
     });
 
     test('dispose() resets offlineQueueLength to 0', () {
-      final dispatcher = EventDispatcherService(cache: EventCache());
+      final dispatcher = EventDispatcherService(
+        webSocketService: wsService,
+        cache: EventCache(),
+      );
       dispatcher.initialize();
       dispatcher.dispose();
       expect(dispatcher.offlineQueueLength, 0);
     });
 
     test('initialize() after dispose() is a no-op and does not throw', () {
-      final dispatcher = EventDispatcherService(cache: EventCache());
+      final dispatcher = EventDispatcherService(
+        webSocketService: wsService,
+        cache: EventCache(),
+      );
       dispatcher.initialize();
       dispatcher.dispose();
       expect(() => dispatcher.initialize(), returnsNormally);

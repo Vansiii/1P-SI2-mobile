@@ -120,22 +120,22 @@ class Message {
       senderRole: json['sender_role'] as String?,
       message: json['message'] as String? ?? '',
       type: (json['message_type'] ?? json['type']) as String? ?? 'text',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String).toLocal()
-          : null,
-      sentAt: json['sent_at'] != null
-          ? DateTime.parse(json['sent_at'] as String).toLocal()
-          : null,
-      deliveredAt: json['delivered_at'] != null
-          ? DateTime.parse(json['delivered_at'] as String).toLocal()
-          : null,
-      readAt: json['read_at'] != null
-          ? DateTime.parse(json['read_at'] as String).toLocal()
-          : null,
+      createdAt: _parseServerDateTime(json['created_at'] as String?),
+      sentAt: _parseServerDateTime(json['sent_at'] as String?),
+      deliveredAt: _parseServerDateTime(json['delivered_at'] as String?),
+      readAt: _parseServerDateTime(json['read_at'] as String?),
       status: _parseStatus(json),
       isRead: json['is_read'] as bool?,
       isTemporary: false,
     );
+  }
+
+  static DateTime? _parseServerDateTime(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final value = raw.trim();
+    final hasTimezone = RegExp(r'([zZ]|[+\-]\d{2}:\d{2})$').hasMatch(value);
+    final normalized = hasTimezone ? value : '${value}Z';
+    return DateTime.parse(normalized).toLocal();
   }
 
   static MessageStatus _parseStatus(Map<String, dynamic> json) {

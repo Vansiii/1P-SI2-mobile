@@ -40,7 +40,7 @@ class IncidentAnalysisState {
   final AnalysisStatus status;
   final String? diagnosis;
   final String? severity;
-  final String? recommendations;
+  final List<String>? recommendations;
   final String? error;
   final String? lastUpdatedAt;
 
@@ -49,7 +49,7 @@ class IncidentAnalysisState {
     AnalysisStatus? status,
     String? diagnosis,
     String? severity,
-    String? recommendations,
+    List<String>? recommendations,
     String? error,
     String? lastUpdatedAt,
   }) {

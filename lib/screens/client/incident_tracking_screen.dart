@@ -1,12 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'dart:async';
-import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:merchanic_repair/core/config/api_config.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
 import 'package:merchanic_repair/data/services/storage_service.dart';
+import 'package:merchanic_repair/services/rating_service.dart';
+import 'package:merchanic_repair/widgets/rating_modal.dart';
+import 'package:merchanic_repair/widgets/map/smart_map_marker.dart';
+import 'package:merchanic_repair/widgets/map/map_compass_button.dart';
+import 'package:merchanic_repair/core/theme/app_colors.dart';
 
 /// Pantalla de seguimiento de incidente para el cliente
 class IncidentTrackingScreen extends StatefulWidget {
@@ -30,6 +36,7 @@ class IncidentTrackingScreen extends StatefulWidget {
 class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
   late MapController _mapController;
   late final WebSocketService _wsService = WebSocketService(StorageService());
+  late final RatingService _ratingService = RatingService();
   StreamSubscription? _wsSubscription;
 
   LatLng? _technicianLocation;
@@ -38,11 +45,12 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
   List<LatLng> _routePoints = [];
   String _incidentStatus = 'asignado';
   String? _workshopName;
-  String? _workshopAddress;
   double? _estimatedDistance;
   String? _estimatedTime;
   bool _isLoadingRoute = false;
   bool _isLoadingData = true;
+  bool _hasRating = false;
+  bool _ratingModalShown = false;
 
   @override
   void initState() {
@@ -80,9 +88,20 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
 
   void _handleStatusChange(Map<String, dynamic> data) {
     if (data['estado_actual'] != null) {
+      final String newStatus = data['estado_actual'];
+      final String previousStatus = _incidentStatus;
+
       setState(() {
-        _incidentStatus = data['estado_actual'];
+        _incidentStatus = newStatus;
       });
+
+      // Show rating modal when incident changes to 'resuelto'
+      if (newStatus == 'resuelto' &&
+          previousStatus != 'resuelto' &&
+          !_hasRating &&
+          !_ratingModalShown) {
+        _showRatingModal();
+      }
     }
   }
 
@@ -129,6 +148,21 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
         }
 
         _updateMapView();
+
+        // Check if incident has rating
+        await _checkIncidentRating();
+
+        // Show rating modal if incident is resolved and not rated
+        if (_incidentStatus == 'resuelto' &&
+            !_hasRating &&
+            !_ratingModalShown) {
+          // Delay to allow UI to settle
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _showRatingModal();
+            }
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error al cargar datos iniciales: $e');
@@ -143,6 +177,41 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
     } finally {
       setState(() => _isLoadingData = false);
     }
+  }
+
+  Future<void> _checkIncidentRating() async {
+    try {
+      final rating = await _ratingService.getIncidentRating(
+        incidentId: widget.incidentId,
+        token: widget.token,
+      );
+
+      setState(() {
+        _hasRating = rating != null;
+      });
+    } catch (e) {
+      debugPrint('Error checking incident rating: $e');
+    }
+  }
+
+  void _showRatingModal() {
+    setState(() {
+      _ratingModalShown = true;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => RatingModal(
+        incidentId: widget.incidentId,
+        token: widget.token,
+        onRatingSubmitted: () {
+          setState(() {
+            _hasRating = true;
+          });
+        },
+      ),
+    );
   }
 
   Future<void> _loadWorkshopData(int workshopId) async {
@@ -165,7 +234,6 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
             workshopData['longitude'],
           );
           _workshopName = workshopData['workshop_name'];
-          _workshopAddress = workshopData['address'];
         });
       }
     } catch (e) {
@@ -356,26 +424,54 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Seguimiento de Servicio'),
+        title: const Text(
+          'Seguimiento de Servicio',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              color: Colors.white.withValues(alpha: 0.85),
+            ),
+          ),
+        ),
+        foregroundColor: AppColors.primary,
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadRoute),
+          IconButton(
+            icon: const Icon(Icons.my_location_rounded),
+            onPressed: _updateMapView,
+            tooltip: 'Centrar',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _loadRoute,
+            tooltip: 'Actualizar ruta',
+          ),
         ],
       ),
       body: Stack(
         children: [
-          // Mapa
+          // Mapa con interacción completa (rotación habilitada)
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _incidentLocation,
               initialZoom: 14.0,
+              minZoom: 5.0,
+              maxZoom: 19.0,
+              interactionOptions: const InteractionOptions(
+                flags: InteractiveFlag.all,
+              ),
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                subdomains: const ['a', 'b', 'c'],
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.mecanicoYa.app',
               ),
 
               // Polyline de la ruta
@@ -385,171 +481,49 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
                     Polyline(
                       points: _routePoints,
                       strokeWidth: 4.0,
-                      color: Colors.blue.withOpacity(0.7),
+                      color: AppColors.primary.withValues(alpha: 0.75),
                       borderStrokeWidth: 2.0,
                       borderColor: Colors.white,
+                      pattern: StrokePattern.dotted(),
                     ),
                   ],
                 ),
 
-              // Marcadores
+              // Marcadores profesionales animados
               MarkerLayer(
                 markers: [
-                  // Marcador del incidente (cliente) - Solo si no hay técnico asignado
-                  if (_technicianLocation == null)
-                    Marker(
-                      point: _incidentLocation,
-                      width: 80,
-                      height: 80,
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.red,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black26, blurRadius: 2),
-                              ],
-                            ),
-                            child: const Text(
-                              'Tu ubicación',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  Marker(
+                    point: _incidentLocation,
+                    width: 50,
+                    height: 65,
+                    alignment: Alignment.bottomCenter,
+                    child: const SmartMapMarker(
+                      role: MarkerRole.client,
+                      label: 'Mi ubicación',
                     ),
+                  ),
 
-                  // Marcador del taller
                   if (_workshopLocation != null)
                     Marker(
                       point: _workshopLocation!,
-                      width: 80,
-                      height: 80,
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.build_circle,
-                              color: Colors.purple,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black26, blurRadius: 2),
-                              ],
-                            ),
-                            child: Text(
-                              _workshopName ?? 'Taller',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      width: 50,
+                      height: 65,
+                      alignment: Alignment.bottomCenter,
+                      child: SmartMapMarker(
+                        role: MarkerRole.workshop,
+                        label: _workshopName ?? 'Taller',
                       ),
                     ),
 
-                  // Marcador del técnico - Solo si está asignado
                   if (_technicianLocation != null)
                     Marker(
                       point: _technicianLocation!,
-                      width: 80,
-                      height: 80,
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.person_pin_circle,
-                              color: Colors.blue,
-                              size: 30,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black26, blurRadius: 2),
-                              ],
-                            ),
-                            child: const Text(
-                              'Técnico',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
+                      width: 50,
+                      height: 65,
+                      alignment: Alignment.bottomCenter,
+                      child: const SmartMapMarker(
+                        role: MarkerRole.technician,
+                        label: 'Técnico',
                       ),
                     ),
                 ],
@@ -557,104 +531,128 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
             ],
           ),
 
-          // Indicador de carga
-          if (_isLoadingRoute)
-            const Positioned(
-              top: 16,
+          // Barra de progreso al calcular ruta
+          if (_isLoadingData || _isLoadingRoute)
+            Positioned(
+              top: 0,
               left: 0,
               right: 0,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: 12),
-                        Text('Calculando ruta...'),
-                      ],
-                    ),
-                  ),
-                ),
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                color: AppColors.primary,
+                minHeight: 3,
               ),
             ),
 
-          // Estado del servicio
-          if (!_isLoadingRoute)
-            Positioned(
-              top: 16,
-              left: 16,
-              right: 16,
-              child: Card(
-                elevation: 4,
-                child: Padding(
+          // Panel de estado flotante con glassmorphism
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 70,
+            left: 16,
+            right: 16,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Estado y badge
                       Row(
                         children: [
                           Container(
-                            width: 12,
-                            height: 12,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
-                              color: _getStatusColor(_incidentStatus),
-                              shape: BoxShape.circle,
+                              color: _getStatusColor(
+                                _incidentStatus,
+                              ).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _getStatusColor(
+                                  _incidentStatus,
+                                ).withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: BoxDecoration(
+                                    color: _getStatusColor(_incidentStatus),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _getStatusText(_incidentStatus),
+                                  style: TextStyle(
+                                    color: _getStatusColor(_incidentStatus),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _getStatusText(_incidentStatus),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
+                          const Spacer(),
+                          if (_workshopName != null)
+                            Text(
+                              _workshopName!,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF6B7280),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                         ],
                       ),
+
                       if (_estimatedDistance != null &&
                           _estimatedTime != null) ...[
-                        const Divider(height: 24),
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, thickness: 1),
+                        const SizedBox(height: 12),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            Column(
-                              children: [
-                                const Icon(Icons.directions_car, size: 24),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${_estimatedDistance!.toStringAsFixed(1)} km',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                Text(
-                                  'Distancia',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
+                            Expanded(
+                              child: _TrackingMetricChip(
+                                icon: Icons.straighten_rounded,
+                                value:
+                                    '${_estimatedDistance!.toStringAsFixed(1)} km',
+                                label: 'Distancia',
+                                color: AppColors.primary,
+                              ),
                             ),
-                            Container(
-                              width: 1,
-                              height: 40,
-                              color: Colors.grey[300],
-                            ),
-                            Column(
-                              children: [
-                                const Icon(Icons.access_time, size: 24),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _estimatedTime!,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                Text(
-                                  'Tiempo estimado',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _TrackingMetricChip(
+                                icon: Icons.access_time_rounded,
+                                value: _estimatedTime!,
+                                label: 'Tiempo estimado',
+                                color: Colors.green.shade700,
+                              ),
                             ),
                           ],
                         ),
@@ -664,40 +662,34 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
                 ),
               ),
             ),
+          ),
 
-          // Botones de acción
+          // Botón de brújula (reset rotación)
           Positioned(
-            bottom: 16,
-            left: 16,
+            top: MediaQuery.of(context).padding.top + 70,
             right: 16,
-            child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // Llamar al técnico
-                        },
-                        icon: const Icon(Icons.phone),
-                        label: const Text('Llamar'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Abrir chat
-                        },
-                        icon: const Icon(Icons.chat),
-                        label: const Text('Chat'),
-                      ),
-                    ),
-                  ],
+            child: MapCompassButton(
+              mapController: _mapController,
+              top: 0,
+              right: 0,
+            ),
+          ),
+
+          // Botón de centrar mapa
+          Positioned(
+            bottom: 24,
+            right: 16,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _MapActionButton(
+                  icon: Icons.center_focus_strong_rounded,
+                  color: Colors.white,
+                  iconColor: AppColors.primary,
+                  onPressed: _updateMapView,
+                  tooltip: 'Centrar mapa',
                 ),
-              ),
+              ],
             ),
           ),
         ],
@@ -711,5 +703,103 @@ class _IncidentTrackingScreenState extends State<IncidentTrackingScreen> {
     _wsService.disconnect();
     _mapController.dispose();
     super.dispose();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UI helper widgets
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TrackingMetricChip extends StatelessWidget {
+  const _TrackingMetricChip({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MapActionButton extends StatelessWidget {
+  const _MapActionButton({
+    required this.icon,
+    required this.color,
+    required this.iconColor,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final Color color;
+  final Color iconColor;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: FloatingActionButton.small(
+          onPressed: onPressed,
+          backgroundColor: color,
+          elevation: 0,
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+      ),
+    );
   }
 }

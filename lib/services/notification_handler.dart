@@ -6,84 +6,91 @@ import 'package:go_router/go_router.dart';
 /// Usa GoRouter para navegación, compatible con el router de la app.
 class NotificationHandler {
   /// Manejar notificación recibida
-  static void handleNotification(RemoteMessage message, BuildContext? context) {
+  static void handleNotification(RemoteMessage message, GoRouter router) {
     final data = message.data;
-    final type = data['type'] as String?;
+    final type = data['type'] as String? ?? data['event_type'] as String?;
 
     debugPrint('📱 Handling notification type: $type');
 
-    if (context == null) {
-      debugPrint('⚠️ Context is null, cannot navigate');
-      return;
-    }
-
     switch (type) {
       case 'chat_message':
-        _handleChatMessage(data, context);
+      case 'chat.message_sent':
+        _handleChatMessage(data, router);
         break;
 
       case 'cancellation_request':
-        _handleCancellationRequest(data, context);
+        _handleCancellationRequest(data, router);
         break;
 
       case 'cancellation_response':
-        _handleCancellationResponse(data, context);
+        _handleCancellationResponse(data, router);
         break;
 
       case 'incident_assigned':
       case 'incident_assignment':
-        _handleIncidentAssigned(data, context);
+      case 'incident.assigned':
+        _handleIncidentAssigned(data, router);
         break;
 
       case 'incident_status_changed':
       case 'incident_accepted':
-        _handleIncidentStatusChanged(data, context);
+      case 'incident.status_changed':
+        _handleIncidentStatusChanged(data, router);
         break;
 
       case 'technician_assigned':
-        _handleIncidentStatusChanged(data, context);
+      case 'incident.technician_assigned':
+        _handleIncidentStatusChanged(data, router);
         break;
 
       case 'technician_arrived':
-        _handleTechnicianArrived(data, context);
+      case 'incident.technician_arrived':
+        _handleTechnicianArrived(data, router);
         break;
 
       case 'service_completed':
-        _handleServiceCompleted(data, context);
+      case 'incident.work_completed':
+        _handleServiceCompleted(data, router);
+        break;
+
+      case 'incident.analysis_completed':
+      case 'incident.analysis_started':
+      case 'incident.analysis_failed':
+      case 'incident.updated':
+        _handleIncidentStatusChanged(data, router);
         break;
 
       default:
         debugPrint('⚠️ Unknown notification type: $type');
-        // Navegar a incidentes como fallback si hay incident_id
-        final incidentId = int.tryParse(data['incident_id'] ?? '');
-        if (incidentId != null) {
-          context.push('/incidents/$incidentId');
-        }
     }
   }
 
-  /// Manejar notificación de mensaje de chat
+  /// Obtener un BuildContext del router para mostrar diálogos
+  static BuildContext? _dialogContext(GoRouter router) {
+    return router.routerDelegate.navigatorKey.currentContext;
+  }
+
+  /// Manejar notificación de mensaje de chat — solo log, sin navegación automática
   static void _handleChatMessage(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
-    final incidentId = int.tryParse(data['incident_id'] ?? '');
-    if (incidentId == null) return;
-
-    // Navegar al detalle del incidente (el chat está dentro del detalle)
-    context.push('/incidents/$incidentId');
+    debugPrint('📱 Chat message notification received (no auto-navigation)');
   }
 
   /// Manejar notificación de solicitud de cancelación
   static void _handleCancellationRequest(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
     final incidentId = int.tryParse(data['incident_id'] ?? '');
     if (incidentId == null) return;
 
+    final ctx = _dialogContext(router);
+    if (ctx == null) return;
+
     showDialog(
-      context: context,
+      context: ctx,
       builder: (context) => AlertDialog(
         title: const Row(
           children: [
@@ -104,7 +111,7 @@ class NotificationHandler {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              context.push('/incidents/$incidentId');
+              router.push('/incidents/$incidentId');
             },
             child: const Text('Ver Incidente'),
           ),
@@ -116,15 +123,18 @@ class NotificationHandler {
   /// Manejar notificación de respuesta a cancelación
   static void _handleCancellationResponse(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
     final incidentId = int.tryParse(data['incident_id'] ?? '');
     final accept = data['accept'] == 'true';
 
     if (incidentId == null) return;
 
+    final ctx = _dialogContext(router);
+    if (ctx == null) return;
+
     showDialog(
-      context: context,
+      context: ctx,
       builder: (context) => AlertDialog(
         title: Row(
           children: [
@@ -146,7 +156,7 @@ class NotificationHandler {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                context.go('/incidents');
+                router.go('/incidents');
               },
               child: const Text('Ver Incidentes'),
             )
@@ -154,7 +164,7 @@ class NotificationHandler {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                context.push('/incidents/$incidentId');
+                router.push('/incidents/$incidentId');
               },
               child: const Text('Ver Incidente'),
             ),
@@ -163,38 +173,35 @@ class NotificationHandler {
     );
   }
 
-  /// Manejar notificación de incidente asignado
+  /// Manejar notificación de incidente asignado — solo log, sin navegación automática
   static void _handleIncidentAssigned(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
-    final incidentId = int.tryParse(data['incident_id'] ?? '');
-    if (incidentId == null) return;
-
-    context.push('/incidents/$incidentId');
+    debugPrint('📱 Incident assigned notification received (no auto-navigation)');
   }
 
-  /// Manejar notificación de cambio de estado
+  /// Manejar notificación de cambio de estado — solo log, sin navegación automática
   static void _handleIncidentStatusChanged(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
-    final incidentId = int.tryParse(data['incident_id'] ?? '');
-    if (incidentId == null) return;
-
-    context.push('/incidents/$incidentId');
+    debugPrint('📱 Incident status changed notification received (no auto-navigation)');
   }
 
   /// Manejar notificación de técnico llegó
   static void _handleTechnicianArrived(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
     final incidentId = int.tryParse(data['incident_id'] ?? '');
     if (incidentId == null) return;
 
+    final ctx = _dialogContext(router);
+    if (ctx == null) return;
+
     showDialog(
-      context: context,
+      context: ctx,
       builder: (context) => AlertDialog(
         title: const Row(
           children: [
@@ -208,7 +215,7 @@ class NotificationHandler {
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop();
-              context.push('/incidents/$incidentId');
+              router.push('/incidents/$incidentId');
             },
             child: const Text('Ver Incidente'),
           ),
@@ -217,15 +224,12 @@ class NotificationHandler {
     );
   }
 
-  /// Manejar notificación de servicio completado
+  /// Manejar notificación de servicio completado — solo log, sin navegación automática
   static void _handleServiceCompleted(
     Map<String, dynamic> data,
-    BuildContext context,
+    GoRouter router,
   ) {
-    final incidentId = int.tryParse(data['incident_id'] ?? '');
-    if (incidentId == null) return;
-
-    context.push('/incidents/$incidentId');
+    debugPrint('📱 Service completed notification received (no auto-navigation)');
   }
 
   /// Obtener icono según tipo de notificación
