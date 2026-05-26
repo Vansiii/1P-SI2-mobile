@@ -156,7 +156,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentCancelledEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'cancelled',
+        status: 'cancelado', // Use Spanish status to match backend
         description: event.reason ?? '',
         reason: event.reason,
         updatedAt: event.cancelledAt,
@@ -165,7 +165,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentWorkCompletedEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'completed',
+        status: 'resuelto', // Use Spanish status to match backend
         description: event.notes ?? '',
         technicianId: event.technicianId,
         updatedAt: event.completedAt,

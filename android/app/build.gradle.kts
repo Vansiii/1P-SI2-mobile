@@ -38,6 +38,13 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            
+            // ProGuard rules for Stripe and other dependencies
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
@@ -58,6 +65,10 @@ dependencies {
     
     // Firebase Analytics - recomendado para tracking de notificaciones
     implementation("com.google.firebase:firebase-analytics-ktx")
+    
+    // Stripe Android SDK - requerido por flutter_stripe
+    // Versión compatible con flutter_stripe 11.5.0
+    implementation("com.stripe:stripe-android:20.55.1")
     
     // Add the dependencies for any other desired Firebase products
     // https://firebase.google.com/docs/android/setup#available-libraries

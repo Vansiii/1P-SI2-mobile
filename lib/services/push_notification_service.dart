@@ -28,6 +28,9 @@ class PushNotificationService {
   String? _fcmToken;
   bool _isInitialized = false;
 
+  final Set<String> _recentMessageIds = {};
+  static const int _maxRecentMessages = 50;
+
   // Callback para cuando el token se actualiza
   Function(String)? _onTokenRefresh;
 
@@ -52,6 +55,8 @@ class PushNotificationService {
       debugPrint('⚠️ Push notifications already initialized');
       return;
     }
+
+    _isInitialized = true;
 
     try {
       // 1. Solicitar permisos
@@ -78,12 +83,10 @@ class PushNotificationService {
           '💡 User can enable notifications later in profile settings',
         );
       }
-
-      _isInitialized = true;
     } catch (e) {
+      _isInitialized = false;
       debugPrint('❌ Error initializing push notifications: $e');
       // No rethrow - permitir que la app continúe sin notificaciones
-      _isInitialized = false;
     }
   }
 
@@ -200,6 +203,18 @@ class PushNotificationService {
 
   /// Manejar mensaje cuando la app está en foreground
   void _handleForegroundMessage(RemoteMessage message) {
+    final messageId = message.messageId;
+    if (messageId != null) {
+      if (_recentMessageIds.contains(messageId)) {
+        debugPrint('⚠️ Skipping duplicate foreground message: $messageId');
+        return;
+      }
+      _recentMessageIds.add(messageId);
+      if (_recentMessageIds.length > _maxRecentMessages) {
+        _recentMessageIds.remove(_recentMessageIds.first);
+      }
+    }
+
     debugPrint('📱 Foreground message received');
     debugPrint('Title: ${message.notification?.title}');
     debugPrint('Body: ${message.notification?.body}');

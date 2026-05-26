@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:merchanic_repair/core/models/realtime_event.dart';
 import 'package:merchanic_repair/core/services/event_dispatcher_service.dart';
+import 'package:merchanic_repair/services/websocket_service.dart'
+    show webSocketServiceProvider;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State model
@@ -190,7 +192,7 @@ class IncidentRealtimeNotifier
   void _onCancelled(IncidentCancelledEvent e) {
     _patch(
       e.incidentId,
-      status: 'cancelled',
+      status: 'cancelado', // Use Spanish status to match backend
       reason: e.reason,
       lastUpdatedAt: e.cancelledAt,
     );
@@ -200,7 +202,7 @@ class IncidentRealtimeNotifier
   void _onWorkCompleted(IncidentWorkCompletedEvent e) {
     _patch(
       e.incidentId,
-      status: 'completed',
+      status: 'resuelto', // Use Spanish status to match backend
       technicianId: e.technicianId,
       lastUpdatedAt: e.completedAt,
     );
@@ -210,7 +212,7 @@ class IncidentRealtimeNotifier
   void _onTechnicianOnWay(IncidentTechnicianOnWayEvent e) {
     _patch(
       e.incidentId,
-      status: 'on_way',
+      status: 'en_camino', // Use Spanish status to match backend
       technicianId: e.technicianId,
       estimatedArrivalMinutes: e.estimatedArrivalMinutes,
       lastUpdatedAt: e.departedAt,
@@ -223,7 +225,7 @@ class IncidentRealtimeNotifier
   void _onTechnicianArrived(IncidentTechnicianArrivedEvent e) {
     _patch(
       e.incidentId,
-      status: 'arrived',
+      status: 'en_sitio', // Use Spanish status to match backend
       technicianId: e.technicianId,
       lastUpdatedAt: e.arrivedAt,
     );
@@ -273,7 +275,7 @@ class IncidentRealtimeNotifier
   void _onWorkStarted(IncidentWorkStartedEvent e) {
     _patch(
       e.incidentId,
-      status: 'in_progress',
+      status: 'en_proceso', // Use Spanish status to match backend
       technicianId: e.technicianId,
       lastUpdatedAt: e.startedAt,
     );
@@ -381,9 +383,10 @@ class IncidentRealtimeNotifier
 // Providers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Provides the [EventDispatcherService] singleton.
+/// Provides the [EventDispatcherService] singleton connected to the active WebSocket.
 final eventDispatcherServiceProvider = Provider<EventDispatcherService>((ref) {
-  final dispatcher = EventDispatcherService();
+  final wsService = ref.watch(webSocketServiceProvider);
+  final dispatcher = EventDispatcherService(webSocketService: wsService);
   dispatcher.initialize();
   ref.onDispose(dispatcher.dispose);
   return dispatcher;

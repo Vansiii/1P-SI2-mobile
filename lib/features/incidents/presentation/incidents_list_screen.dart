@@ -8,8 +8,6 @@ import '../../../core/widgets/app_drawer.dart';
 import '../providers/incident_provider.dart';
 import '../providers/incidents_websocket_provider.dart';
 import '../data/models/incident_model.dart';
-import '../../../services/websocket_service.dart';
-import '../../auth/providers/auth_provider.dart';
 import '../services/incident_analysis_realtime_service.dart';
 
 class IncidentsListScreen extends ConsumerStatefulWidget {
@@ -27,16 +25,9 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
   void initState() {
     super.initState();
 
-    // ✅ Conectar WebSocket para recibir actualizaciones en tiempo real
+    // Asegura estado fresco al volver desde chat/tracking.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final wsService = ref.read(webSocketServiceProvider);
-      final user = ref.read(authProvider).user;
-
-      if (user != null && !wsService.isConnected) {
-        // Conectar al WebSocket general (tracking del usuario)
-        wsService.connect('/ws/tracking/${user.id}');
-        debugPrint('✅ WebSocket connected for client user ${user.id}');
-      }
+      ref.read(incidentsProvider.notifier).loadIncidents();
     });
 
     // Actualizar la UI cada minuto para refrescar los tiempos relativos
@@ -93,39 +84,46 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
     // ✅ Activar el provider de análisis IA en tiempo real
     ref.watch(incidentAnalysisRealtimeProvider);
 
-    // Sincronizar cambios del WebSocket al provider HTTP
+    // Sincronizar snapshot base HTTP -> estado realtime para que los eventos
+    // apliquen también sobre incidentes existentes (no solo los creados en vivo).
+    ref.listen<AsyncValue<List<IncidentModel>>>(incidentsProvider, (
+      _,
+      next,
+    ) {
+      next.whenData((incidents) {
+        ref
+            .read(incidentsWebSocketProvider.notifier)
+            .syncFromBaseIncidents(incidents);
+      });
+    });
+
+    // Sincronizar cambios del WebSocket: recargar del HTTP cuando cambia cualquier dato
     ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
       previous,
       next,
     ) {
       if (previous == null) return;
 
-      // Si cambió la longitud (nuevo incidente o eliminado), recargar
+      // Rebuild triggers on any state change — reload to ensure consistency
       if (next.length != previous.length) {
         ref.read(incidentsProvider.notifier).loadIncidents();
         return;
       }
 
-      // Comparar incidentes por ID, no por índice
+      // Check if any incident data changed
       for (final nextIncident in next) {
-        final prevIncident = previous.firstWhere(
-          (inc) => inc.id == nextIncident.id,
-          orElse: () => nextIncident, // Si no existe, es nuevo
-        );
+        final prevIncident = previous.where((i) => i.id == nextIncident.id).firstOrNull;
+        if (prevIncident == null) {
+          ref.read(incidentsProvider.notifier).loadIncidents();
+          return;
+        }
 
-        // Si es el mismo incidente, verificar si cambió algún campo relevante
-        if (prevIncident.id == nextIncident.id &&
-            (prevIncident.prioridadIa != nextIncident.prioridadIa ||
-                prevIncident.categoriaIa != nextIncident.categoriaIa ||
-                prevIncident.resumenIa != nextIncident.resumenIa ||
-                prevIncident.estadoActual != nextIncident.estadoActual ||
-                prevIncident.tallerId != nextIncident.tallerId ||
-                prevIncident.tecnicoId != nextIncident.tecnicoId)) {
-          debugPrint(
-            '[IncidentsListScreen] Syncing incident ${nextIncident.id} from WebSocket to HTTP provider',
-          );
-
-          // Actualizar el incidente en el provider HTTP
+        if (prevIncident.prioridadIa != nextIncident.prioridadIa ||
+            prevIncident.categoriaIa != nextIncident.categoriaIa ||
+            prevIncident.resumenIa != nextIncident.resumenIa ||
+            prevIncident.estadoActual != nextIncident.estadoActual ||
+            prevIncident.tallerId != nextIncident.tallerId ||
+            prevIncident.tecnicoId != nextIncident.tecnicoId) {
           ref
               .read(incidentsProvider.notifier)
               .updateIncidentFromWebSocket(nextIncident.id, {

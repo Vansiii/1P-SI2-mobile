@@ -349,7 +349,6 @@ class WebSocketService {
         ),
       );
 
-      _startHeartbeat();
     } catch (e) {
       _onError(e);
     }
@@ -359,6 +358,12 @@ class WebSocketService {
   void _onMessage(dynamic raw) {
     try {
       final data = jsonDecode(raw as String) as Map<String, dynamic>;
+
+      // Handle server ping with pong response (server-side heartbeat).
+      if (data['type'] == 'ping') {
+        _sendPong();
+        return;
+      }
 
       // Handle pong for latency tracking.
       if (data['type'] == 'pong') {
@@ -455,24 +460,13 @@ class WebSocketService {
     }
   }
 
-  /// Starts the 30-second heartbeat timer.
-  void _startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _sendPing(),
-    );
-  }
-
-  /// Sends a ping message and records the send time.
-  void _sendPing() {
+  /// Responds to a server ping with a pong (server-side heartbeat only).
+  void _sendPong() {
     if (!isConnected || _channel == null) return;
-    _lastPingSent = DateTime.now();
     try {
-      _channel!.sink.add(jsonEncode({'type': 'ping'}));
-      debugPrint('[WebSocketService] Ping sent.');
+      _channel!.sink.add(jsonEncode({'type': 'pong'}));
     } catch (e) {
-      debugPrint('[WebSocketService] Failed to send ping: $e');
+      debugPrint('[WebSocketService] Failed to send pong: $e');
     }
   }
 

@@ -97,3 +97,8 @@ coverage/
 # Additional build artifacts
 *.dSYM.zip
 *.dSYM
+
+# Skills files (should be committed if they are part of the project)
+.agents/
+skills-lock.json
+.kiro/

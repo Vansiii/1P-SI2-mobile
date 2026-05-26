@@ -136,7 +136,7 @@ class AuthRepository {
       print('📥 Respuesta COMPLETA del perfil: $response');
 
       // El backend devuelve los datos dentro de 'data'
-      final responseData = response as Map<String, dynamic>;
+      final responseData = response;
       final userData = responseData['data'] as Map<String, dynamic>;
 
       print('👤 Datos del usuario parseados:');

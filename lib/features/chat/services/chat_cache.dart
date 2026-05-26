@@ -50,7 +50,7 @@ class ChatCache {
 
     try {
       final key = 'incident_$incidentId';
-      final data = _box!.get(key) as Map?;
+      final Map? data = _box!.get(key);
 
       if (data == null) return [];
 
@@ -77,7 +77,7 @@ class ChatCache {
 
     try {
       final key = 'incident_${message.incidentId}';
-      final data = _box!.get(key) as Map?;
+      final Map? data = _box!.get(key);
 
       if (data == null) {
         // Si no existe cache, crear uno nuevo
@@ -122,7 +122,7 @@ class ChatCache {
 
     try {
       final key = 'incident_$incidentId';
-      final data = _box!.get(key) as Map?;
+      final Map? data = _box!.get(key);
 
       if (data == null) return;
 
@@ -182,7 +182,7 @@ class ChatCache {
       final keysToDelete = <String>[];
 
       for (var key in _box!.keys) {
-        final data = _box!.get(key) as Map?;
+        final Map? data = _box!.get(key);
         if (data == null) continue;
 
         final cachedAtStr = data['cached_at'] as String?;

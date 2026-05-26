@@ -105,6 +105,8 @@ abstract class RealTimeEvent {
         return IncidentReassignedEvent.fromJson(json);
       case 'incident.photos_uploaded':
         return IncidentPhotosUploadedEvent.fromJson(json);
+      case 'incident.updated':
+        return IncidentUpdatedEvent.fromJson(json);
       case 'incident.analysis_started':
         return IncidentAnalysisStartedEvent.fromJson(json);
       case 'incident.analysis_completed':
@@ -810,6 +812,48 @@ class IncidentPhotosUploadedEvent extends RealTimeEvent {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── INCIDENT UPDATED EVENT ─────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+
+class IncidentUpdatedEvent extends RealTimeEvent {
+  const IncidentUpdatedEvent({
+    required super.eventId,
+    required super.timestamp,
+    required super.priority,
+    required this.incidentId,
+    required this.updatedFields,
+    this.updatedAt,
+  }) : super(eventType: 'incident.updated');
+
+  final int incidentId;
+  final Map<String, dynamic> updatedFields;
+  final String? updatedAt;
+
+  factory IncidentUpdatedEvent.fromJson(Map<String, dynamic> json) {
+    final payload = _map(json, 'payload');
+    final src = payload.isNotEmpty ? payload : json;
+    return IncidentUpdatedEvent(
+      eventId: _str(json, 'event_id'),
+      timestamp: _str(json, 'timestamp'),
+      priority: _priority(json),
+      incidentId: _int(src, 'incident_id'),
+      updatedFields: _map(src, 'updated_fields'),
+      updatedAt: src['updated_at'] as String?,
+    );
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+    ...super.toJson(),
+    'payload': {
+      'incident_id': incidentId,
+      'updated_fields': updatedFields,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ── ANALYSIS EVENTS ────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -868,12 +912,17 @@ class IncidentAnalysisCompletedEvent extends RealTimeEvent {
   final int analysisId;
   final String diagnosis;
   final String? severity;
-  final String? recommendations;
+  final List<String>? recommendations;
   final String? completedAt;
 
   factory IncidentAnalysisCompletedEvent.fromJson(Map<String, dynamic> json) {
     final payload = _map(json, 'payload');
     final src = payload.isNotEmpty ? payload : json;
+    final recs = src['recommendations'];
+    List<String>? recommendationsList;
+    if (recs is List) {
+      recommendationsList = recs.map((e) => e.toString()).toList();
+    }
     return IncidentAnalysisCompletedEvent(
       eventId: _str(json, 'event_id'),
       timestamp: _str(json, 'timestamp'),
@@ -882,7 +931,7 @@ class IncidentAnalysisCompletedEvent extends RealTimeEvent {
       analysisId: _int(src, 'analysis_id'),
       diagnosis: _str(src, 'diagnosis'),
       severity: src['severity'] as String?,
-      recommendations: src['recommendations'] as String?,
+      recommendations: recommendationsList,
       completedAt: src['completed_at'] as String?,
     );
   }
@@ -1052,11 +1101,13 @@ class ChatUserStoppedTypingEvent extends RealTimeEvent {
     required super.priority,
     required this.incidentId,
     required this.userId,
+    this.userName,
     this.stoppedAt,
   }) : super(eventType: 'chat.user_stopped_typing');
 
   final int incidentId;
   final int userId;
+  final String? userName;
   final String? stoppedAt;
 
   factory ChatUserStoppedTypingEvent.fromJson(Map<String, dynamic> json) {
@@ -1068,6 +1119,7 @@ class ChatUserStoppedTypingEvent extends RealTimeEvent {
       priority: _priority(json),
       incidentId: _int(src, 'incident_id'),
       userId: _int(src, 'user_id'),
+      userName: src['user_name'] as String?,
       stoppedAt: src['stopped_at'] as String?,
     );
   }
@@ -1078,6 +1130,7 @@ class ChatUserStoppedTypingEvent extends RealTimeEvent {
     'payload': {
       'incident_id': incidentId,
       'user_id': userId,
+      if (userName != null) 'user_name': userName,
       if (stoppedAt != null) 'stopped_at': stoppedAt,
     },
   };
@@ -1140,13 +1193,16 @@ class ChatMessageReadEvent extends RealTimeEvent {
   factory ChatMessageReadEvent.fromJson(Map<String, dynamic> json) {
     final payload = _map(json, 'payload');
     final src = payload.isNotEmpty ? payload : json;
+    final readBy = src.containsKey('read_by_user_id')
+        ? _int(src, 'read_by_user_id')
+        : _int(src, 'read_by');
     return ChatMessageReadEvent(
       eventId: _str(json, 'event_id'),
       timestamp: _str(json, 'timestamp'),
       priority: _priority(json),
       messageId: _int(src, 'message_id'),
       incidentId: _int(src, 'incident_id'),
-      readByUserId: _int(src, 'read_by_user_id'),
+      readByUserId: readBy,
       readAt: src['read_at'] as String?,
     );
   }

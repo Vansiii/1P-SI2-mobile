@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -8,8 +10,11 @@ import '../../../core/theme/app_colors.dart';
 import '../../payments/presentation/payment_screen.dart';
 import '../../payments/providers/payment_provider.dart';
 import '../providers/incident_provider.dart';
+import '../providers/incident_realtime_provider.dart';
+import '../providers/incidents_websocket_provider.dart';
 import '../data/models/incident_ai_analysis_model.dart';
 import '../data/models/incident_model.dart';
+import '../services/incident_analysis_realtime_service.dart';
 import 'incident_tracking_map_screen.dart';
 
 class IncidentDetailScreen extends ConsumerStatefulWidget {
@@ -140,6 +145,57 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Real-time: watch incident realtime state to keep provider alive
+    ref.watch(incidentRealtimeStateProvider(widget.incidentId));
+
+    // Real-time: react to status changes from WebSocket
+    ref.listen<IncidentRealtimeState?>(
+      incidentRealtimeStateProvider(widget.incidentId),
+      (previous, next) {
+        if (previous == null || next == null) return;
+        if (previous.status != next.status && _incident != null) {
+          setState(() {
+            _incident = _incident!.copyWith(estadoActual: next.status);
+          });
+        }
+      },
+    );
+
+    // Real-time: react to AI analysis completion
+    ref.listen<Map<int, IncidentAnalysisState>>(
+      incidentAnalysisRealtimeProvider,
+      (previous, next) {
+        if (previous == null) return;
+        final prevState = previous[widget.incidentId];
+        final nextState = next[widget.incidentId];
+        if (prevState?.status != AnalysisStatus.completed &&
+            nextState?.status == AnalysisStatus.completed) {
+          _loadAiAnalysisData();
+          _loadIncidentDetail();
+        }
+      },
+    );
+
+    // Real-time: auto-reload detail when WebSocket provider updates this incident
+    ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (previous, next) {
+      if (previous == null || _incident == null) return;
+      final prevIncident = previous.where((i) => i.id == widget.incidentId).firstOrNull;
+      final nextIncident = next.where((i) => i.id == widget.incidentId).firstOrNull;
+      if (prevIncident == null && nextIncident != null) {
+        _loadIncidentDetail();
+      }
+      if (prevIncident != null && nextIncident != null) {
+        final needsRefresh = prevIncident.estadoActual != nextIncident.estadoActual ||
+            prevIncident.tallerId != nextIncident.tallerId ||
+            prevIncident.tecnicoId != nextIncident.tecnicoId ||
+            prevIncident.prioridadIa != nextIncident.prioridadIa ||
+            prevIncident.categoriaIa != nextIncident.categoriaIa;
+        if (needsRefresh) {
+          _loadIncidentDetail();
+        }
+      }
+    });
+
     if (_isLoading) {
       return Scaffold(
         backgroundColor: AppColors.baseBg,

@@ -6,7 +6,6 @@
 //   3. Exponential backoff timing formula
 //   4. Dispose cleans up all resources
 
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';

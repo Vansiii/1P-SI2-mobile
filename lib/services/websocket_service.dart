@@ -609,7 +609,7 @@ class WebSocketService {
       }
 
       // ── Deduplication (Task 19.1) ─────────────────────────────────────────
-      final eventId = data['id'] as String?;
+      final eventId = (data['event_id'] ?? data['id'])?.toString();
       if (eventId != null) {
         if (_processedEventIds.contains(eventId)) {
           debugPrint(
@@ -624,13 +624,16 @@ class WebSocketService {
         }
       }
 
-      // Convert dots to underscores to match EventType enum (e.g., "incident.created" -> "incident_created")
-      final normalizedTypeString = typeString.replaceAll('.', '_');
-      final eventType = eventTypeFromString(normalizedTypeString);
+      // Resolve canonical event type first; fallback to legacy underscore aliases.
+      EventType eventType = eventTypeFromString(typeString);
+      if (eventType == EventType.unknown) {
+        final normalizedTypeString = typeString.replaceAll('.', '_');
+        eventType = eventTypeFromString(normalizedTypeString);
+      }
 
       if (eventType == EventType.unknown) {
         debugPrint(
-          '[WebSocketService] Unknown event type "$typeString" (normalized: "$normalizedTypeString"), ignoring.',
+          '[WebSocketService] Unknown event type "$typeString", ignoring.',
         );
         return;
       }
