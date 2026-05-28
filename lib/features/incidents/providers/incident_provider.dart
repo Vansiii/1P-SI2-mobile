@@ -38,6 +38,7 @@ class IncidentsNotifier extends StateNotifier<AsyncValue<List<IncidentModel>>> {
     required String descripcion,
     List<String>? imagenes,
     List<String>? audios,
+    String assignmentMode = 'auto',
   }) async {
     final incident = await _repository.createIncident(
       vehiculoId: vehiculoId,
@@ -47,6 +48,7 @@ class IncidentsNotifier extends StateNotifier<AsyncValue<List<IncidentModel>>> {
       descripcion: descripcion,
       imagenes: imagenes,
       audios: audios,
+      assignmentMode: assignmentMode,
     );
 
     // Reload incidents list

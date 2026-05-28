@@ -37,6 +37,7 @@ class ApiConfig {
   static const String chat = '$apiVersion/chat';
   static const String cancellation = '$apiVersion/cancellation';
   static const String payments = '$apiVersion/payments';
+  static const String workshops = '$apiVersion/workshops';
 
   // WebSocket Endpoints
   static const String wsIncidents = '$apiVersion/ws/incidents';

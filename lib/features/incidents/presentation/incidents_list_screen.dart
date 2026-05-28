@@ -76,6 +76,27 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
     }
   }
 
+  Widget _buildAssignmentBadge(String mode) {
+    final isAuto = mode == 'auto';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isAuto
+            ? AppColors.info.withOpacity(0.1)
+            : AppColors.warning.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        isAuto ? 'AUTO' : 'MANUAL',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: isAuto ? AppColors.info : AppColors.warning,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final incidentsState = ref.watch(incidentsProvider);
@@ -351,6 +372,8 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    _buildAssignmentBadge(incident.assignmentMode),
                     const Spacer(),
                     _buildStatusBadge(
                       incident.estadoActual,

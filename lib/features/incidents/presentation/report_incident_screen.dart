@@ -38,6 +38,7 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
   bool _isSubmitting = false;
   bool _isUploadingImage = false;
   bool _isUploadingAudio = false;
+  String _assignmentMode = 'auto';
 
   // Evidencias
   final List<File> _selectedImages = [];
@@ -265,6 +266,49 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
     }
   }
 
+  Widget _buildModeCard({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary.withOpacity(0.08) : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.borderLight,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? AppColors.primary : AppColors.textMuted, size: 28),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppColors.primary : AppColors.textMain,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -281,7 +325,7 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await ref
+      final incident = await ref
           .read(incidentsProvider.notifier)
           .createIncident(
             vehiculoId: _selectedVehicleId!,
@@ -293,14 +337,21 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
             descripcion: _descripcionController.text.trim(),
             imagenes: _uploadedImageUrls,
             audios: _uploadedAudioUrls,
+            assignmentMode: _assignmentMode,
           );
 
       if (mounted) {
         SnackBarUtils.showSuccess(
           context,
-          'Emergencia reportada. Un taller será asignado pronto.',
+          _assignmentMode == 'manual'
+              ? 'Emergencia reportada. Selecciona un taller.'
+              : 'Emergencia reportada. Un taller será asignado pronto.',
         );
-        context.pop();
+        if (_assignmentMode == 'manual') {
+          context.replace('/incidents/${incident.id}/select-workshop');
+        } else {
+          context.pop();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -863,6 +914,39 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
               const SizedBox(height: 12),
               AudioRecorderWidget(onAudioRecorded: _handleAudioRecorded),
               const SizedBox(height: 32),
+
+              // Selector de modo de asignación
+              Text(
+                '¿Cómo quieres que se asigne tu emergencia?',
+                style: Theme.of(context)
+                    .textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildModeCard(
+                      icon: Icons.bolt,
+                      label: 'Automático',
+                      subtitle: 'El sistema asigna el mejor taller',
+                      selected: _assignmentMode == 'auto',
+                      onTap: () => setState(() => _assignmentMode = 'auto'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildModeCard(
+                      icon: Icons.touch_app,
+                      label: 'Elegir taller',
+                      subtitle: 'Tú comparas y decides',
+                      selected: _assignmentMode == 'manual',
+                      onTap: () => setState(() => _assignmentMode = 'manual'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
 
               // Botón de envío
               PrimaryButton(

@@ -261,6 +261,23 @@ class IncidentRealtimeNotifier
   }
 
   void _onAssignmentTimeout(IncidentAssignmentTimeoutEvent e) {
+    // MODO MANUAL: limpiar el taller asignado (backend ya lo limpió en DB)
+    // para que el cliente pueda volver a seleccionar
+    if (e.assignmentMode == 'manual') {
+      _patch(
+        e.incidentId,
+        status: 'pendiente',
+        workshopId: null,  // 🔑 Limpiar taller para habilitar reselección
+        reason: 'El taller no respondió dentro del tiempo límite. Puedes elegir otro.',
+        lastUpdatedAt: e.timedOutAt,
+      );
+      debugPrint(
+        '[IncidentRealtimeNotifier] manual timeout: id=${e.incidentId}, taller limpiado',
+      );
+      return;
+    }
+
+    // MODO AUTO: comportamiento existente
     _patch(
       e.incidentId,
       status: 'assignment_timeout',

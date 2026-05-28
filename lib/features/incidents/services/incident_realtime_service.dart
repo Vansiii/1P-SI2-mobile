@@ -172,6 +172,7 @@ class IncidentRealtimeService {
         descripcion: event.description,
         esAmbiguo: false,
         estadoActual: event.status.isNotEmpty ? event.status : 'pending',
+        assignmentMode: 'auto',
         createdAt: DateTime.parse(event.createdAt),
         updatedAt: DateTime.parse(event.createdAt),
       );

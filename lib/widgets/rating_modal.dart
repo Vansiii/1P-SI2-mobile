@@ -107,30 +107,33 @@ class _RatingModalState extends State<RatingModal> {
             const SizedBox(height: 24),
 
             // Star rating selector
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(5, (index) {
-                final starValue = index + 1;
-                return IconButton(
-                  icon: Icon(
-                    starValue <= _selectedRating
-                        ? Icons.star
-                        : Icons.star_border,
-                    size: 40,
-                    color: starValue <= _selectedRating
-                        ? Colors.amber
-                        : Colors.grey,
-                  ),
-                  onPressed: _isSubmitting
-                      ? null
-                      : () {
-                          setState(() {
-                            _selectedRating = starValue;
-                            _errorMessage = null;
-                          });
-                        },
-                );
-              }),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) {
+                  final starValue = index + 1;
+                  return IconButton(
+                    icon: Icon(
+                      starValue <= _selectedRating
+                          ? Icons.star
+                          : Icons.star_border,
+                      size: 40,
+                      color: starValue <= _selectedRating
+                          ? Colors.amber
+                          : Colors.grey,
+                    ),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () {
+                            setState(() {
+                              _selectedRating = starValue;
+                              _errorMessage = null;
+                            });
+                          },
+                  );
+                }),
+              ),
             ),
             const SizedBox(height: 8),
 

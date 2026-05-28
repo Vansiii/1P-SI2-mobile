@@ -417,9 +417,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         }
       } else if (type == 'chat.message_read' || type == 'message_read') {
         _handleMessageStatusEvent(message, isRead: true);
-      } else if (type == 'chat.message_delivered' || type == 'message_delivered') {
+      } else if (type == 'chat.message_delivered' ||
+          type == 'message_delivered') {
         _handleMessageStatusEvent(message, isRead: false);
-      } else if (type == 'incident_status_changed' || type == 'incident.status_changed') {
+      } else if (type == 'incident_status_changed' ||
+          type == 'incident.status_changed') {
         final data = (message['data'] is Map<String, dynamic>)
             ? message['data'] as Map<String, dynamic>
             : message;
@@ -466,18 +468,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (type == 'cancellation.approved' || type == 'cancellation_response') {
       unawaited(_handleCancellationApprovedAndRedirect());
       return;
-      if (mounted) {
-        setState(() => _pendingCancellation = null);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Cancelación aprobada. Volviendo a solicitudes...'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-        Future.delayed(const Duration(milliseconds: 900), () {
-          if (mounted) context.go('/incidents');
-        });
-      }
     }
   }
 
@@ -545,8 +535,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           'sender_role': payload['sender_role'],
           'message': payload['content'] ?? '',
           'message_type': payload['message_type'] ?? 'text',
-          'created_at': _normalizeServerTimestamp(payload['sent_at'] ?? message['timestamp']),
-          'sent_at': _normalizeServerTimestamp(payload['sent_at'] ?? message['timestamp']),
+          'created_at': _normalizeServerTimestamp(
+            payload['sent_at'] ?? message['timestamp'],
+          ),
+          'sent_at': _normalizeServerTimestamp(
+            payload['sent_at'] ?? message['timestamp'],
+          ),
           'is_read': false,
         });
       }
@@ -971,19 +965,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (accept) {
           unawaited(_handleCancellationApprovedAndRedirect());
           return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                '✅ Cancelación aceptada. El sistema buscará un nuevo taller.',
-              ),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 4),
-            ),
-          );
-          // Volver atrás después de un momento
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) context.go('/incidents');
-          });
         } else {
           setState(() => _pendingCancellation = null);
           ScaffoldMessenger.of(context).showSnackBar(
