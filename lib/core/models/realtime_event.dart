@@ -637,6 +637,7 @@ class IncidentAssignmentTimeoutEvent extends RealTimeEvent {
     required this.workshopName,
     required this.timeoutMinutes,
     required this.timedOutAt,
+    this.assignmentMode,
   }) : super(eventType: 'incident.assignment_timeout');
 
   final int incidentId;
@@ -644,6 +645,7 @@ class IncidentAssignmentTimeoutEvent extends RealTimeEvent {
   final String workshopName;
   final int timeoutMinutes;
   final String timedOutAt;
+  final String? assignmentMode;
 
   factory IncidentAssignmentTimeoutEvent.fromJson(Map<String, dynamic> json) {
     final payload = _map(json, 'payload');
@@ -657,6 +659,7 @@ class IncidentAssignmentTimeoutEvent extends RealTimeEvent {
       workshopName: _str(src, 'workshop_name'),
       timeoutMinutes: _int(src, 'timeout_minutes'),
       timedOutAt: _str(src, 'timed_out_at'),
+      assignmentMode: _str(src, 'assignment_mode'),
     );
   }
 
@@ -669,6 +672,7 @@ class IncidentAssignmentTimeoutEvent extends RealTimeEvent {
       'workshop_name': workshopName,
       'timeout_minutes': timeoutMinutes,
       'timed_out_at': timedOutAt,
+      'assignment_mode': assignmentMode,
     },
   };
 }

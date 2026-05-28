@@ -24,6 +24,9 @@ import '../../features/incidents/presentation/incidents_list_screen.dart';
 import '../../features/incidents/presentation/technician_incidents_screen.dart';
 import '../../features/incidents/presentation/report_incident_screen.dart';
 import '../../features/incidents/presentation/incident_detail_screen.dart';
+import '../../features/incidents/presentation/workshop_selection_screen.dart';
+import '../../features/incidents/presentation/workshop_map_screen.dart';
+import '../../features/incidents/presentation/workshop_detail_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
 /// App Router Configuration with GoRouter
@@ -245,6 +248,36 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = int.parse(state.pathParameters['id']!);
           return IncidentDetailScreen(incidentId: id);
+        },
+      ),
+      GoRoute(
+        path: '/incidents/:id/select-workshop',
+        name: 'select-workshop',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return WorkshopSelectionScreen(incidentId: id);
+        },
+      ),
+      GoRoute(
+        path: '/incidents/:id/workshop-map',
+        name: 'workshop-map',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return WorkshopMapScreen(incidentId: id);
+        },
+      ),
+      GoRoute(
+        path: '/incidents/:incidentId/workshop-detail/:workshopId',
+        name: 'workshop-detail',
+        builder: (context, state) {
+          final incidentId =
+              int.parse(state.pathParameters['incidentId']!);
+          final workshopId =
+              int.parse(state.pathParameters['workshopId']!);
+          return WorkshopDetailScreen(
+            incidentId: incidentId,
+            workshopId: workshopId,
+          );
         },
       ),
     ],

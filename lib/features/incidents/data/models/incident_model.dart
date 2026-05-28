@@ -13,6 +13,7 @@ class IncidentModel {
   final String? resumenIa;
   final bool esAmbiguo;
   final String estadoActual;
+  final String assignmentMode;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? assignedAt;
@@ -37,6 +38,7 @@ class IncidentModel {
     this.resumenIa,
     required this.esAmbiguo,
     required this.estadoActual,
+    required this.assignmentMode,
     required this.createdAt,
     required this.updatedAt,
     this.assignedAt,
@@ -61,6 +63,7 @@ class IncidentModel {
       resumenIa: json['resumen_ia'] as String?,
       esAmbiguo: json['es_ambiguo'] as bool? ?? false,
       estadoActual: json['estado_actual'] as String,
+      assignmentMode: json['assignment_mode'] as String? ?? 'auto',
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
       assignedAt: json['assigned_at'] != null
@@ -130,6 +133,7 @@ class IncidentModel {
     Object? resumenIa = _sentinel,
     bool? esAmbiguo,
     String? estadoActual,
+    String? assignmentMode,
     DateTime? createdAt,
     DateTime? updatedAt,
     Object? assignedAt = _sentinel,
@@ -158,6 +162,7 @@ class IncidentModel {
       resumenIa: resumenIa == _sentinel ? this.resumenIa : resumenIa as String?,
       esAmbiguo: esAmbiguo ?? this.esAmbiguo,
       estadoActual: estadoActual ?? this.estadoActual,
+      assignmentMode: assignmentMode ?? this.assignmentMode,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       assignedAt: assignedAt == _sentinel

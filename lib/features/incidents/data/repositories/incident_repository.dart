@@ -139,6 +139,7 @@ class IncidentRepository {
     required String descripcion,
     List<String>? imagenes,
     List<String>? audios,
+    String assignmentMode = 'auto',
   }) async {
     final token = await _storageService.getAccessToken();
     if (token == null) throw Exception('No hay token de autenticación');
@@ -157,6 +158,7 @@ class IncidentRepository {
         'descripcion': descripcion,
         'imagenes': imagenes ?? [],
         'audios': audios ?? [],
+        'assignment_mode': assignmentMode,
       }),
     );
 

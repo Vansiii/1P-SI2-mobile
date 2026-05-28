@@ -123,6 +123,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
         descripcion: payload.description,
         esAmbiguo: event.data['es_ambiguo'] as bool? ?? false,
         estadoActual: payload.status.isNotEmpty ? payload.status : 'pendiente',
+        assignmentMode: event.data['assignment_mode'] as String? ?? 'auto',
         createdAt: payload.createdAt,
         updatedAt: payload.createdAt,
       );
@@ -173,7 +174,9 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     try {
       final incidentId = _parseIncidentId(event.data);
       final newStatus =
-          (event.data['new_status'] ?? event.data['estado_actual'] ?? event.data['status'])
+          (event.data['new_status'] ??
+                  event.data['estado_actual'] ??
+                  event.data['status'])
               ?.toString();
       if (incidentId == null || newStatus == null || newStatus.isEmpty) return;
 
@@ -204,13 +207,16 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
           : <String, dynamic>{};
       final updatedFields = Map<String, dynamic>.from(payloadFields);
       final statusFromRoot = _extractStatus(event.data);
-      if (statusFromRoot != null && !updatedFields.containsKey('estado_actual')) {
+      if (statusFromRoot != null &&
+          !updatedFields.containsKey('estado_actual')) {
         updatedFields['estado_actual'] = statusFromRoot;
       }
-      if (event.data.containsKey('tecnico_id') && !updatedFields.containsKey('tecnico_id')) {
+      if (event.data.containsKey('tecnico_id') &&
+          !updatedFields.containsKey('tecnico_id')) {
         updatedFields['tecnico_id'] = event.data['tecnico_id'];
       }
-      if (event.data.containsKey('taller_id') && !updatedFields.containsKey('taller_id')) {
+      if (event.data.containsKey('taller_id') &&
+          !updatedFields.containsKey('taller_id')) {
         updatedFields['taller_id'] = event.data['taller_id'];
       }
 
@@ -380,11 +386,14 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
         return incident.copyWith(
-          categoriaIa: event.data['categoria_ia'] as String? ?? incident.categoriaIa,
-          prioridadIa: event.data['prioridad_ia'] as String? ?? incident.prioridadIa,
+          categoriaIa:
+              event.data['categoria_ia'] as String? ?? incident.categoriaIa,
+          prioridadIa:
+              event.data['prioridad_ia'] as String? ?? incident.prioridadIa,
           resumenIa: event.data['resumen_ia'] as String? ?? incident.resumenIa,
           esAmbiguo: event.data['es_ambiguo'] as bool? ?? incident.esAmbiguo,
-          estadoActual: event.data['estado_actual'] as String? ?? incident.estadoActual,
+          estadoActual:
+              event.data['estado_actual'] as String? ?? incident.estadoActual,
         );
       }).toList();
       debugPrint(
@@ -475,7 +484,8 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     IncidentModel incident,
     Map<String, dynamic> fields,
   ) {
-    final status = fields['estado_actual'] as String? ??
+    final status =
+        fields['estado_actual'] as String? ??
         fields['new_status'] as String? ??
         fields['status'] as String?;
 
@@ -542,8 +552,9 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
 
       final workshopId = _parseNullableInt(event.data['workshop_id']);
       final rawTechnicianId = _parseNullableInt(event.data['technician_id']);
-      final technicianId =
-          (rawTechnicianId != null && rawTechnicianId > 0) ? rawTechnicianId : null;
+      final technicianId = (rawTechnicianId != null && rawTechnicianId > 0)
+          ? rawTechnicianId
+          : null;
 
       // Backend emits assignment_accepted in both paths:
       // - manual accept => estado real: asignado (technician_id may be 0/null)

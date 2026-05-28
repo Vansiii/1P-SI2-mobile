@@ -6,9 +6,12 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../payments/presentation/payment_screen.dart';
 import '../../payments/providers/payment_provider.dart';
+import '../../../widgets/rating_modal.dart';
+import '../../../data/services/storage_service.dart';
 import '../providers/incident_provider.dart';
 import '../providers/incident_realtime_provider.dart';
 import '../providers/incidents_websocket_provider.dart';
@@ -30,10 +33,11 @@ class IncidentDetailScreen extends ConsumerStatefulWidget {
 class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   IncidentModel? _incident;
   IncidentAiAnalysisModel? _latestAiAnalysis;
+  IncidentRealtimeState? _realtimeState;
   bool _isLoading = true;
   bool _isLoadingAiAnalysis = false;
   String? _error;
-  
+
   // Payment status
   bool _isPaid = false;
   int? _transactionId;
@@ -78,7 +82,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         });
 
         await _loadAiAnalysisData();
-        
+
         if (incident.estadoActual == 'resuelto') {
           await _checkPaymentStatus();
         }
@@ -95,13 +99,15 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
 
   Future<void> _checkPaymentStatus() async {
     if (!mounted) return;
-    
+
     setState(() {
       _isCheckingPayment = true;
     });
-    
+
     try {
-      final status = await ref.read(paymentProvider.notifier).checkPaymentStatus(widget.incidentId);
+      final status = await ref
+          .read(paymentProvider.notifier)
+          .checkPaymentStatus(widget.incidentId);
       if (status != null && status['is_paid'] == true && mounted) {
         setState(() {
           _isPaid = true;
@@ -146,7 +152,8 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     // Real-time: watch incident realtime state to keep provider alive
-    ref.watch(incidentRealtimeStateProvider(widget.incidentId));
+    final rt = ref.watch(incidentRealtimeStateProvider(widget.incidentId));
+    _realtimeState = rt;
 
     // Real-time: react to status changes from WebSocket
     ref.listen<IncidentRealtimeState?>(
@@ -177,15 +184,23 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
     );
 
     // Real-time: auto-reload detail when WebSocket provider updates this incident
-    ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (previous, next) {
+    ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
+      previous,
+      next,
+    ) {
       if (previous == null || _incident == null) return;
-      final prevIncident = previous.where((i) => i.id == widget.incidentId).firstOrNull;
-      final nextIncident = next.where((i) => i.id == widget.incidentId).firstOrNull;
+      final prevIncident = previous
+          .where((i) => i.id == widget.incidentId)
+          .firstOrNull;
+      final nextIncident = next
+          .where((i) => i.id == widget.incidentId)
+          .firstOrNull;
       if (prevIncident == null && nextIncident != null) {
         _loadIncidentDetail();
       }
       if (prevIncident != null && nextIncident != null) {
-        final needsRefresh = prevIncident.estadoActual != nextIncident.estadoActual ||
+        final needsRefresh =
+            prevIncident.estadoActual != nextIncident.estadoActual ||
             prevIncident.tallerId != nextIncident.tallerId ||
             prevIncident.tecnicoId != nextIncident.tecnicoId ||
             prevIncident.prioridadIa != nextIncident.prioridadIa ||
@@ -314,6 +329,9 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                     case 'complete':
                       _showCompleteDialog(context, incident.id);
                       break;
+                    case 'rate':
+                      _showRatingModal(context, incident.id);
+                      break;
                   }
                 },
                 itemBuilder: (context) {
@@ -378,6 +396,25 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                                   ? 'Completando...'
                                   : 'Marcar como Completado',
                             ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Opción de calificar (solo si está resuelto)
+                  if (incident.estadoActual == 'resuelto') {
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: 'rate',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.star_outlined,
+                              color: AppColors.warning,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('Calificar Servicio'),
                           ],
                         ),
                       ),
@@ -773,7 +810,117 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                       ],
                     ),
                   ),
-                  
+
+                  // Botón para seleccionar taller (modo manual + pendiente)
+                  if (incident.assignmentMode == 'manual' &&
+                      (incident.estadoActual == 'pendiente' ||
+                          incident.estadoActual ==
+                              'sin_taller_disponible')) ...[
+                    const SizedBox(height: 24),
+                    // Si hubo timeout previo, mostrar banner
+                    if (_realtimeState?.reason != null &&
+                        _realtimeState!.reason!.contains('no respondió')) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.error.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.timer_off,
+                                  color: AppColors.error,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _realtimeState!.reason!,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.error,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          context.push(
+                            '/incidents/${incident.id}/select-workshop',
+                          );
+                        },
+                        icon: const Icon(Icons.build_circle, size: 22),
+                        label: Text(
+                          incident.tallerId != null
+                              ? 'Reenviar o cambiar taller'
+                              : 'Seleccionar Taller',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Si ya tiene solicitud pendiente
+                    if (incident.tallerId != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppColors.warning.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.hourglass_empty,
+                              color: AppColors.warning,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'Solicitud enviada. Esperando respuesta del taller...',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.warning,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+
                   if (incident.estadoActual == 'resuelto') ...[
                     const SizedBox(height: 32),
                     if (_isCheckingPayment)
@@ -782,18 +929,24 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: _transactionId == null ? null : () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => PaymentReceiptScreen(
-                                  transactionId: _transactionId!,
-                                ),
-                              ),
-                            );
-                          },
+                          onPressed: _transactionId == null
+                              ? null
+                              : () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          PaymentReceiptScreen(
+                                            transactionId: _transactionId!,
+                                          ),
+                                    ),
+                                  );
+                                },
                           icon: const Icon(Icons.receipt_long),
-                          label: const Text('Ver Comprobante de Pago', style: TextStyle(fontSize: 16)),
+                          label: const Text(
+                            'Ver Comprobante de Pago',
+                            style: TextStyle(fontSize: 16),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
@@ -823,7 +976,10 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                             });
                           },
                           icon: const Icon(Icons.payment),
-                          label: const Text('Proceder al Pago', style: TextStyle(fontSize: 16)),
+                          label: const Text(
+                            'Proceder al Pago',
+                            style: TextStyle(fontSize: 16),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.success,
                             foregroundColor: Colors.white,
@@ -1531,5 +1687,33 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         );
       }
     }
+  }
+
+  void _showRatingModal(BuildContext context, int incidentId) async {
+    final storageService = StorageService();
+    final token = await storageService.getAccessToken() ?? '';
+
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => RatingModal(
+        incidentId: incidentId,
+        token: token,
+        onRatingSubmitted: () {
+          Navigator.pop(ctx);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Calificación enviada. ¡Gracias!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        },
+      ),
+    );
   }
 }
