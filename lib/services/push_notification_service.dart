@@ -44,6 +44,33 @@ class PushNotificationService {
   String? get fcmToken => _fcmToken;
   bool get isInitialized => _isInitialized;
 
+  Future<String?> ensureToken() async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    if (_fcmToken != null && _fcmToken!.isNotEmpty) {
+      return _fcmToken;
+    }
+
+    try {
+      final settings = await _messaging.getNotificationSettings();
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        final requested = await _requestPermissions();
+        if (requested.authorizationStatus != AuthorizationStatus.authorized &&
+            requested.authorizationStatus != AuthorizationStatus.provisional) {
+          debugPrint('⚠️ Notification permission still not granted');
+          return null;
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error checking notification permissions before token fetch: $e');
+    }
+
+    return await _getFCMToken();
+  }
+
   /// Configurar callback para actualización de token
   void setTokenRefreshCallback(Function(String) callback) {
     _onTokenRefresh = callback;
@@ -249,7 +276,14 @@ class PushNotificationService {
   /// Mostrar notificación local
   Future<void> _showLocalNotification(RemoteMessage message) async {
     final notification = message.notification;
-    if (notification == null) return;
+    final fallbackTitle = message.data['title']?.toString();
+    final fallbackBody = message.data['body']?.toString();
+    final title = notification?.title ?? fallbackTitle;
+    final body = notification?.body ?? fallbackBody;
+
+    if ((title == null || title.isEmpty) && (body == null || body.isEmpty)) {
+      return;
+    }
 
     const androidDetails = AndroidNotificationDetails(
       'mecanicoya_channel',
@@ -275,8 +309,8 @@ class PushNotificationService {
 
     await _localNotifications.show(
       message.hashCode,
-      notification.title,
-      notification.body,
+      title,
+      body,
       details,
       payload: message.data.toString(),
     );

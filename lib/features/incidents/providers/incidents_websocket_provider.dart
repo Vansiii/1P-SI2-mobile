@@ -173,11 +173,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   void _onIncidentStatusChanged(WebSocketEvent event) {
     try {
       final incidentId = _parseIncidentId(event.data);
-      final newStatus =
-          (event.data['new_status'] ??
-                  event.data['estado_actual'] ??
-                  event.data['status'])
-              ?.toString();
+      final newStatus = _extractStatus(event.data);
       if (incidentId == null || newStatus == null || newStatus.isEmpty) return;
 
       state = state.map((incident) {
@@ -318,6 +314,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
           tallerId: newWorkshopId,
           // Keep tecnicoId null until workshop accepts
           tecnicoId: null,
+          estadoActual: 'pendiente',
         );
       }).toList();
 
@@ -338,6 +335,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     try {
       final incidentId = _parseIncidentId(event.data);
       final workshopId = _parseNullableInt(event.data['workshop_id']);
+      final assignmentMode = event.data['assignment_mode'] as String?;
 
       if (incidentId == null) {
         debugPrint(
@@ -346,8 +344,17 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
         return;
       }
 
-      // We don't remove the incident from the list, just log it
-      // The UI can check assignment_attempts to show timeout indicator
+      if (assignmentMode == 'manual') {
+        state = state.map((incident) {
+          if (incident.id != incidentId) return incident;
+          return incident.copyWith(
+            tallerId: null,
+            tecnicoId: null,
+            estadoActual: 'pendiente',
+          );
+        }).toList();
+      }
+
       debugPrint(
         '[IncidentsWebSocketNotifier] assignment_timeout: '
         'incident=$incidentId, workshop=$workshopId',
@@ -362,14 +369,15 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   /// `incident_analysis_started` → mark the incident as being analyzed by AI.
   void _onAnalysisStarted(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
-        return incident.copyWith(estadoActual: 'analizando_ia');
+        if (incident.assignmentMode == 'manual') return incident;
+        return incident.copyWith(estadoActual: 'pendiente');
       }).toList();
       debugPrint(
-        '[IncidentsWebSocketNotifier] analysis_started: id=$incidentId',
+        '[IncidentsWebSocketNotifier] analysis_started: id=$incidentId (kept pending)',
       );
     } catch (e) {
       debugPrint(
@@ -381,7 +389,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   /// `incident_analysis_completed` → update AI result fields.
   void _onAnalysisCompleted(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
@@ -392,8 +400,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
               event.data['prioridad_ia'] as String? ?? incident.prioridadIa,
           resumenIa: event.data['resumen_ia'] as String? ?? incident.resumenIa,
           esAmbiguo: event.data['es_ambiguo'] as bool? ?? incident.esAmbiguo,
-          estadoActual:
-              event.data['estado_actual'] as String? ?? incident.estadoActual,
+          estadoActual: _extractStatus(event.data) ?? incident.estadoActual,
         );
       }).toList();
       debugPrint(
@@ -410,7 +417,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   /// `incident_analysis_failed` → mark analysis as failed.
   void _onAnalysisFailed(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       debugPrint(
         '[IncidentsWebSocketNotifier] analysis_failed: id=$incidentId '
@@ -426,7 +433,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   /// `incident_ai_processing` → intermediate AI processing state.
   void _onAiProcessing(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       debugPrint(
         '[IncidentsWebSocketNotifier] ai_processing: id=$incidentId '
@@ -439,17 +446,19 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     }
   }
 
-  /// `incident_searching_workshop` → mark as searching.
+  /// `incident_searching_workshop` → keep visible status as pending.
   void _onSearchingWorkshop(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
-        return incident.copyWith(estadoActual: 'buscando_taller');
+        if (incident.assignmentMode == 'manual') return incident;
+        if (incident.estadoActual != 'pendiente') return incident;
+        return incident.copyWith(estadoActual: 'pendiente');
       }).toList();
       debugPrint(
-        '[IncidentsWebSocketNotifier] searching_workshop: id=$incidentId',
+        '[IncidentsWebSocketNotifier] searching_workshop: id=$incidentId (kept pending)',
       );
     } catch (e) {
       debugPrint(
@@ -461,7 +470,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
   /// `incident_no_workshop_available` → mark as no workshop available.
   void _onNoWorkshopAvailable(WebSocketEvent event) {
     try {
-      final incidentId = event.data['incident_id'] as int?;
+      final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
@@ -484,10 +493,7 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     IncidentModel incident,
     Map<String, dynamic> fields,
   ) {
-    final status =
-        fields['estado_actual'] as String? ??
-        fields['new_status'] as String? ??
-        fields['status'] as String?;
+    final status = _extractStatus(fields);
 
     return incident.copyWith(
       tallerId: fields.containsKey('taller_id')
@@ -559,7 +565,9 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
       // Backend emits assignment_accepted in both paths:
       // - manual accept => estado real: asignado (technician_id may be 0/null)
       // - suggested technician accept => estado real: en_proceso (technician_id > 0)
-      final derivedStatus = technicianId != null ? 'en_proceso' : 'asignado';
+      final derivedStatus =
+          (event.data['new_status'] as String?) ??
+          (technicianId != null ? 'en_proceso' : 'asignado');
 
       state = state.map((incident) {
         if (incident.id != incidentId) return incident;
@@ -585,6 +593,18 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     try {
       final incidentId = _parseIncidentId(event.data);
       if (incidentId == null) return;
+      final assignmentMode = event.data['assignment_mode'] as String?;
+      state = state.map((incident) {
+        if (incident.id != incidentId) return incident;
+        if (assignmentMode == 'manual' || incident.assignmentMode == 'manual') {
+          return incident.copyWith(
+            tallerId: null,
+            tecnicoId: null,
+            estadoActual: 'pendiente',
+          );
+        }
+        return incident;
+      }).toList();
       debugPrint(
         '[IncidentsWebSocketNotifier] assignment_rejected: id=$incidentId',
       );
@@ -627,7 +647,46 @@ class IncidentsWebSocketNotifier extends StateNotifier<List<IncidentModel>> {
     final raw = data['estado_actual'] ?? data['new_status'] ?? data['status'];
     final status = raw?.toString().trim();
     if (status == null || status.isEmpty) return null;
-    return status;
+    return _normalizeVisibleStatus(status);
+  }
+
+  String _normalizeVisibleStatus(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'pending':
+      case 'pendiente':
+      case 'analizando_ia':
+      case 'analysing_ai':
+      case 'analysis_started':
+      case 'processing_ai':
+      case 'ai_processing':
+      case 'searching_workshop':
+      case 'buscando_taller':
+        return 'pendiente';
+      case 'assigned':
+      case 'asignado':
+        return 'asignado';
+      case 'accepted':
+      case 'aceptado':
+        return 'aceptado';
+      case 'on_way':
+      case 'en_camino':
+        return 'en_camino';
+      case 'in_progress':
+      case 'en_proceso':
+        return 'en_proceso';
+      case 'resolved':
+      case 'resuelto':
+        return 'resuelto';
+      case 'cancelled':
+      case 'cancelado':
+        return 'cancelado';
+      case 'no_workshop_available':
+      case 'sin_taller_disponible':
+      case 'sin_taller_asignado':
+        return 'sin_taller_disponible';
+      default:
+        return status;
+    }
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

@@ -85,6 +85,22 @@ class IncidentModel {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id, 'client_id': clientId, 'vehiculo_id': vehiculoId,
+    'taller_id': tallerId, 'tecnico_id': tecnicoId,
+    'latitude': latitude, 'longitude': longitude,
+    'direccion_referencia': direccionReferencia, 'descripcion': descripcion,
+    'categoria_ia': categoriaIa, 'prioridad_ia': prioridadIa,
+    'resumen_ia': resumenIa, 'es_ambiguo': esAmbiguo,
+    'estado_actual': estadoActual, 'assignment_mode': assignmentMode,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+    'assigned_at': assignedAt?.toIso8601String(),
+    'resolved_at': resolvedAt?.toIso8601String(),
+    'imagenes': imagenes?.map((e) => e.toJson()).toList(),
+    'audios': audios?.map((e) => e.toJson()).toList(),
+  };
+
   String get estadoLabel {
     switch (estadoActual) {
       case 'pendiente':
@@ -206,6 +222,11 @@ class EvidenciaImagen {
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id, 'file_url': fileUrl, 'file_name': fileName,
+    'created_at': createdAt.toIso8601String(),
+  };
 }
 
 class EvidenciaAudio {
@@ -229,4 +250,9 @@ class EvidenciaAudio {
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id, 'file_url': fileUrl, 'file_name': fileName,
+    'created_at': createdAt.toIso8601String(),
+  };
 }

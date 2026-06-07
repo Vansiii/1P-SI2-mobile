@@ -4,8 +4,8 @@ import '../data/models/session_model.dart';
 import '../data/repositories/session_repository.dart';
 
 final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
-  final storageService = ref.watch(storageServiceProvider);
-  return SessionRepository(storageService);
+  final apiService = ref.watch(apiServiceProvider);
+  return SessionRepository(apiService);
 });
 
 final sessionsProvider = FutureProvider<SessionListModel>((ref) async {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
+import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import 'package:merchanic_repair/shared/utils/snackbar_utils.dart';
 import '../providers/workshop_selection_provider.dart';
 import '../data/models/workshop_selection_model.dart';
@@ -11,11 +12,13 @@ import '../data/models/workshop_selection_model.dart';
 class WorkshopDetailScreen extends ConsumerStatefulWidget {
   final int incidentId;
   final int workshopId;
+  final String origin;
 
   const WorkshopDetailScreen({
     super.key,
     required this.incidentId,
     required this.workshopId,
+    this.origin = 'report',
   });
 
   @override
@@ -24,6 +27,32 @@ class WorkshopDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
+  final ScrollController _historyScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _historyScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkshopDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.incidentId != widget.incidentId ||
+        oldWidget.workshopId != widget.workshopId) {
+      ref.invalidate(
+        assignmentHistoryProvider(
+          (incidentId: oldWidget.incidentId, workshopId: oldWidget.workshopId),
+        ),
+      );
+      ref.invalidate(
+        assignmentHistoryProvider(
+          (incidentId: widget.incidentId, workshopId: widget.workshopId),
+        ),
+      );
+    }
+  }
+
   Future<void> _selectWorkshop(String name) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -56,7 +85,8 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
       if (!mounted) return;
       SnackBarUtils.showSuccess(context, result.message);
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) context.go('/incidents/${widget.incidentId}');
+        if (!mounted) return;
+        context.pop(true);
       });
     } catch (e) {
       if (!mounted) return;
@@ -92,7 +122,11 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
           final historyAsync = ref.watch(
               assignmentHistoryProvider(
                   (incidentId: widget.incidentId, workshopId: widget.workshopId)));
-          final history = historyAsync.whenOrNull(data: (d) => d) ?? [];
+          final history = (historyAsync.whenOrNull(data: (d) => d) ?? [])
+              .where((item) =>
+                  item.incidentId == widget.incidentId &&
+                  item.workshopId == widget.workshopId)
+              .toList();
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -164,16 +198,14 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
           initialZoom: 14.5,
         ),
         children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.merchanic.app',
-          ),
+          const CachedOsmTileLayer(),
           MarkerLayer(
             markers: [
               Marker(
                 point: LatLng(w.latitude, w.longitude),
                 width: 60,
                 height: 60,
+                alignment: Alignment.topCenter,
                 child: const Icon(Icons.location_on,
                     color: AppColors.primary, size: 42),
               ),
@@ -715,7 +747,21 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          ...history.map((h) => _historyItem(h)),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: Scrollbar(
+              controller: _historyScrollController,
+              thumbVisibility: history.length > 3,
+              child: ListView.separated(
+                controller: _historyScrollController,
+                primary: false,
+                padding: EdgeInsets.zero,
+                itemCount: history.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, index) => _historyItem(history[index]),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -745,7 +791,6 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
     final isActive = h.isPending;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.baseBg,

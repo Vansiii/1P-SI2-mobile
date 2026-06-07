@@ -14,7 +14,9 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/features/tracking/providers/tracking_realtime_provider.dart';
+import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import 'package:merchanic_repair/widgets/map/map_compass_button.dart';
+import 'package:merchanic_repair/widgets/map/smart_map_marker.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public widget
@@ -140,12 +142,11 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
       markers.add(
         Marker(
           point: LatLng(trackingState!.latitude!, trackingState.longitude!),
-          width: 50,
-          height: 65,
-          alignment: Alignment.bottomCenter,
+          width: SmartMapMarker.markerWidth,
+          height: SmartMapMarker.markerHeight,
+          alignment: Alignment.topCenter,
           child: _TechnicianMarker(
             heading: trackingState.heading,
-            accuracy: trackingState.accuracy,
           ),
         ),
       );
@@ -166,10 +167,7 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
           ),
           children: [
             // OpenStreetMap tile layer.
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.mecanicoYa.app',
-            ),
+            const CachedOsmTileLayer(),
 
             // Accuracy circle (GPS precision indicator).
             if ((trackingState?.hasLocation ?? false) &&
@@ -215,87 +213,18 @@ class _TrackingMapWidgetState extends ConsumerState<TrackingMapWidget> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TechnicianMarker extends StatelessWidget {
-  const _TechnicianMarker({this.heading, this.accuracy});
+  const _TechnicianMarker({this.heading});
 
   final double? heading;
-  final double? accuracy;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 50,
-      height: 65,
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            top: 0,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.4),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Transform.rotate(
-                angle: heading != null ? (heading! * 3.14159265 / 180) : 0,
-                child: const Icon(
-                  Icons.navigation_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 38,
-            child: CustomPaint(
-              size: const Size(20, 14),
-              painter: _PinTailPainter(color: AppColors.primary),
-            ),
-          ),
-        ],
-      ),
+    return SmartMapMarker(
+      primaryColor: AppColors.primary,
+      icon: Icons.navigation_rounded,
+      heading: heading,
     );
   }
-}
-
-class _PinTailPainter extends CustomPainter {
-  final Color color;
-
-  _PinTailPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.2)
-      ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
-
-    final path = Path();
-    path.moveTo(size.width * 0.15, 0);
-    path.lineTo(size.width * 0.85, 0);
-    path.lineTo(size.width * 0.5, size.height);
-    path.close();
-
-    canvas.drawPath(path, shadowPaint);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

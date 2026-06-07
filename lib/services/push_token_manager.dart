@@ -14,7 +14,7 @@ class PushTokenManager {
   /// Registrar el token FCM en el backend después del login
   Future<void> registerTokenAfterLogin() async {
     try {
-      final token = _pushService.fcmToken;
+      final token = await _pushService.ensureToken();
       if (token == null || token.isEmpty) {
         debugPrint('⚠️ No FCM token available to register');
         return;

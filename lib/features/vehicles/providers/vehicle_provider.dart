@@ -2,8 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchanic_repair/features/vehicles/data/models/vehicle_model.dart';
 import 'package:merchanic_repair/features/vehicles/data/repositories/vehicle_repository.dart';
+import 'package:merchanic_repair/core/services/data_cache.dart';
+import '../../auth/providers/auth_provider.dart';
 
-final vehicleRepositoryProvider = Provider((ref) => VehicleRepository());
+final vehicleRepositoryProvider = Provider((ref) {
+  final apiService = ref.watch(apiServiceProvider);
+  return VehicleRepository(apiService);
+});
 
 final vehiclesProvider =
     StateNotifierProvider<VehiclesNotifier, AsyncValue<List<VehicleModel>>>((
@@ -16,10 +21,33 @@ class VehiclesNotifier extends StateNotifier<AsyncValue<List<VehicleModel>>> {
   final VehicleRepository _repository;
 
   VehiclesNotifier(this._repository) : super(const AsyncValue.loading()) {
+    _loadFromCacheThenFetch();
+  }
+
+  void _loadFromCacheThenFetch() {
+    final cached = _repository.getCachedVehicles();
+    if (cached != null && cached.isNotEmpty) {
+      state = AsyncValue.data(cached);
+    }
     loadVehicles();
   }
 
   Future<void> loadVehicles({bool activeOnly = true}) async {
+    final hasFakeData = state.value?.any((v) => v.id == 0) ?? false;
+    if (!hasFakeData && state.value != null && state.value!.isNotEmpty) {
+      return;
+    }
+    try {
+      final vehicles = await _repository.getVehicles(activeOnly: activeOnly);
+      state = AsyncValue.data(vehicles);
+    } catch (e, stack) {
+      if (state.value == null || state.value!.isEmpty) {
+        state = AsyncValue.error(e, stack);
+      }
+    }
+  }
+
+  Future<void> refreshVehicles({bool activeOnly = true}) async {
     state = const AsyncValue.loading();
     try {
       final vehicles = await _repository.getVehicles(activeOnly: activeOnly);
@@ -46,8 +74,17 @@ class VehiclesNotifier extends StateNotifier<AsyncValue<List<VehicleModel>>> {
       imagen: imagen,
     );
 
-    // Reload vehicles list
-    await loadVehicles();
+    if (vehicle.id == 0) {
+      final list = state.valueOrNull ?? const <VehicleModel>[];
+      state = AsyncValue.data([vehicle, ...list]);
+      final cached = _repository.getCachedVehicles();
+      if (cached != null) {
+        _repository.cacheVehicles([vehicle, ...cached]);
+      }
+      return vehicle;
+    }
+
+    await refreshVehicles();
 
     return vehicle;
   }
@@ -72,14 +109,13 @@ class VehiclesNotifier extends StateNotifier<AsyncValue<List<VehicleModel>>> {
     );
 
     // Reload vehicles list
-    await loadVehicles();
+    await refreshVehicles();
   }
 
   Future<void> deleteVehicle(int vehicleId) async {
     await _repository.deleteVehicle(vehicleId);
 
-    // Reload vehicles list
-    await loadVehicles();
+    await refreshVehicles();
   }
 
   Future<String> uploadVehicleImage(dynamic imageFile) async {
@@ -183,6 +219,82 @@ class VehiclesNotifier extends StateNotifier<AsyncValue<List<VehicleModel>>> {
       debugPrint(
         '[VehiclesNotifier] updateVehicleImageFromWebSocket: id=$vehicleId',
       );
+    });
+  }
+
+  // ── Sync-driven updates (incremental, no reload) ────────────────────────
+
+  Future<void> applySyncResults(List<Map<String, dynamic>> results) async {
+    for (final r in results) {
+      final type = r['operationType'] as String? ?? '';
+      final serverId = (r['serverEntityId'] as num?)?.toInt();
+      if (serverId == null) continue;
+
+      switch (type) {
+        case 'CREATE_VEHICLE':
+          try {
+            final vehicle = await _repository.getVehicle(serverId);
+            _replaceFakeWithReal(vehicle);
+          } catch (e) {
+            debugPrint('[VehiclesNotifier] Sync create error: $e');
+          }
+          break;
+        case 'UPDATE_VEHICLE':
+          try {
+            final vehicle = await _repository.getVehicle(serverId);
+            _updateVehicleInState(vehicle);
+          } catch (e) {
+            debugPrint('[VehiclesNotifier] Sync update error: $e');
+          }
+          break;
+        case 'DELETE_VEHICLE':
+          state.whenData((vehicles) {
+            state = AsyncValue.data(
+              vehicles.where((v) => v.id != serverId).toList(),
+            );
+            _repository.cacheVehicles(state.value ?? []);
+          });
+          break;
+      }
+    }
+  }
+
+  void _replaceFakeWithReal(VehicleModel real) {
+    state.whenData((vehicles) {
+      final hasFake = vehicles.any((v) => v.id == 0);
+      final hasReal = vehicles.any((v) => v.id == real.id);
+
+      if (hasReal) {
+        state = AsyncValue.data(vehicles.where((v) => v.id != 0).toList());
+      } else if (hasFake) {
+        final updated = <VehicleModel>[];
+        bool replaced = false;
+        for (final v in vehicles) {
+          if (v.id == 0 && !replaced) {
+            updated.add(real);
+            replaced = true;
+          } else if (v.id != 0) {
+            updated.add(v);
+          }
+        }
+        state = AsyncValue.data(updated);
+      } else {
+        state = AsyncValue.data([real, ...vehicles]);
+      }
+
+      _repository.cacheVehicles(state.value ?? []);
+      debugPrint('[VehiclesNotifier] Sync: replaced fake → id=${real.id}');
+    });
+  }
+
+  void _updateVehicleInState(VehicleModel updated) {
+    state.whenData((vehicles) {
+      final newList = vehicles
+          .map((v) => v.id == updated.id ? updated : v)
+          .toList();
+      state = AsyncValue.data(newList);
+      _repository.cacheVehicles(newList);
+      debugPrint('[VehiclesNotifier] Sync: updated vehicle ${updated.id}');
     });
   }
 }

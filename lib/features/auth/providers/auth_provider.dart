@@ -1,5 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/websocket/connection_status.dart';
+import '../../../core/services/data_cache.dart';
+import '../../../core/services/data_preloader.dart';
+import '../../../core/services/evidence_offline_queue.dart';
+import '../../../core/providers/offline_sync_provider.dart';
+import '../../../data/db/app_database.dart';
 import '../../../data/models/auth_response.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/repositories/auth_repository.dart';
@@ -7,6 +15,7 @@ import '../../../data/services/api_service.dart';
 import '../../../data/services/storage_service.dart';
 import '../../../services/technician_location_service.dart';
 import '../../../services/websocket_service.dart';
+import '../../chat/services/chat_cache.dart';
 import '../../incidents/services/incident_realtime_service.dart';
 import '../../incidents/services/cancellation_realtime_service.dart';
 import '../../technicians/data/models/technician_model.dart';
@@ -110,6 +119,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final isAuth = await _storageService.isAuthenticated();
       if (isAuth) {
         final user = await _storageService.getUserData();
+        if (user != null && !_isMobileUserTypeAllowed(user.userType)) {
+          await _authRepository.logout();
+          if (mounted) {
+            state = AuthState(isLoading: false);
+          }
+          return;
+        }
         if (mounted) {
           state = state.copyWith(
             isAuthenticated: true,
@@ -119,7 +135,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
         // Conectar WebSocket al restaurar sesión
         if (user != null) {
+          DataCache.currentUserId = user.id;
           await _connectWebSocket(user);
+          // Inicializar SyncManager al restaurar sesión
+          try {
+            final syncManager = _ref.read(syncManagerProvider);
+            await syncManager.initialize();
+          } catch (e) {
+            print('AuthNotifier: Error inicializando SyncManager: $e');
+          }
+          _prefetchData(user);
+          await _registerPushToken();
         }
       } else {
         if (mounted) {
@@ -135,6 +161,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // Login
   // Tipos de usuario permitidos en app móvil: client, technician, administrator
+  bool _isMobileUserTypeAllowed(String? userType) {
+    return userType == 'client' || userType == 'technician';
+  }
+
+  Never _throwMobileAccessDenied() {
+    throw Exception(
+      'Esta aplicación móvil es para clientes y técnicos. '
+      'Si eres administrador o taller, por favor usa la plataforma web.',
+    );
+  }
+
+  void _ensureMobileAccessAllowed(String? userType) {
+    if (_isMobileUserTypeAllowed(userType)) return;
+    if (mounted) {
+      state = state.copyWith(isLoading: false);
+    }
+    _throwMobileAccessDenied();
+  }
+
   Future<AuthResponse> login(String email, String password) async {
     if (mounted) {
       state = state.copyWith(isLoading: true, error: null);
@@ -145,6 +190,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         email: email,
         password: password,
       );
+
+      _ensureMobileAccessAllowed(response.user?.userType ?? response.userType);
 
       if (!response.requires2fa) {
         // Login sin 2FA - autenticar inmediatamente
@@ -192,6 +239,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   // Método privado para autenticar usuario y obtener perfil completo
   Future<void> _authenticateUser(AuthResponse response) async {
+    _ensureMobileAccessAllowed(response.user?.userType ?? response.userType);
     // VALIDACIÓN: Clientes y técnicos pueden usar la app móvil
     final allowedTypes = ['client', 'technician'];
     if (response.user?.userType != null &&
@@ -209,6 +257,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // Los endpoints de login y verify-2fa pueden no devolver todos los campos
     try {
       final fullUser = await _authRepository.getProfile();
+      _ensureMobileAccessAllowed(fullUser.userType);
 
       if (mounted) {
         state = state.copyWith(
@@ -226,12 +275,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // ✅ Conectar WebSocket después del login exitoso
       await _connectWebSocket(fullUser);
 
-      // ✅ Inicializar servicio de eventos en tiempo real para incidentes
-      // Solo para administradores que necesitan recibir notificaciones de nuevos incidentes
-      if (fullUser.userType == 'administrator') {
-        _initializeIncidentRealtimeService();
-        _initializeCancellationRealtimeService();
+      // ✅ Inicializar SyncManager para cola offline
+      try {
+        final syncManager = _ref.read(syncManagerProvider);
+        await syncManager.initialize();
+      } catch (e) {
+        print('AuthNotifier: Error inicializando SyncManager: $e');
       }
+
+      DataCache.currentUserId = fullUser.id;
+      _prefetchData(fullUser);
 
       // Registrar token FCM después del login exitoso
       await _registerPushToken();
@@ -255,12 +308,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (response.user != null) {
         await _connectWebSocket(response.user!);
 
-        // ✅ Inicializar servicio de eventos en tiempo real para incidentes
-        // Solo para administradores
-        if (response.user!.userType == 'administrator') {
-          _initializeIncidentRealtimeService();
-          _initializeCancellationRealtimeService();
+        // ✅ Inicializar SyncManager
+        try {
+          final syncManager = _ref.read(syncManagerProvider);
+          await syncManager.initialize();
+        } catch (e) {
+          print('AuthNotifier: Error inicializando SyncManager: $e');
         }
+
+        DataCache.currentUserId = response.user!.id;
+        _prefetchData(response.user!);
       }
 
       // Registrar token FCM después del login exitoso
@@ -472,6 +529,47 @@ class AuthNotifier extends StateNotifier<AuthState> {
         print('AuthNotifier: Seguimiento de ubicación detenido');
       }
 
+      // Limpiar cola offline Drift del usuario
+      try {
+        final user = await _storageService.getUserData();
+        if (user != null) {
+          await AppDatabase().offlineQueueDao.clearByUserId(user.id);
+        }
+      } catch (e) {
+        print('AuthNotifier: Error limpiando cola Drift: $e');
+      }
+
+      // Limpiar cache Hive
+      try {
+        await DataCache.clear();
+        DataCache.currentUserId = null;
+      } catch (e) {
+        print('AuthNotifier: Error limpiando DataCache: $e');
+      }
+
+      // Limpiar cache de chat Hive
+      try {
+        await ChatCache.clearAll();
+      } catch (e) {
+        print('AuthNotifier: Error limpiando ChatCache: $e');
+      }
+
+      // Limpiar cola de evidencias
+      try {
+        await EvidenceOfflineQueue().clear();
+      } catch (e) {
+        print('AuthNotifier: Error limpiando EvidenceQueue: $e');
+      }
+
+      // Limpiar archivos offline
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final uploadDir = Directory('${dir.path}/offline_uploads');
+        if (await uploadDir.exists()) {
+          await uploadDir.delete(recursive: true);
+        }
+      } catch (_) {}
+
       await _authRepository.logout();
       if (mounted) {
         state = AuthState();
@@ -492,6 +590,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     } catch (e) {
       // Handle error silently
+    }
+  }
+
+  void _prefetchData(UserModel user) {
+    try {
+      final apiService = _ref.read(apiServiceProvider);
+      final preloader = DataPreloader(apiService);
+      preloader.preLoad(user.id, user.userType ?? 'client');
+    } catch (e) {
+      print('AuthNotifier: Error en pre-fetch: $e');
     }
   }
 }

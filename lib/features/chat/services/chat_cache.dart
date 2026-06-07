@@ -1,5 +1,6 @@
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:merchanic_repair/data/models/message.dart';
+import 'package:merchanic_repair/data/models/message_status.dart';
 
 /// Servicio de cache local para mensajes de chat usando Hive
 class ChatCache {
@@ -25,13 +26,13 @@ class ChatCache {
 
     try {
       final key = 'incident_$incidentId';
-      final messagesJson = messages
-          .where((m) => !m.isTemporary) // No cachear mensajes temporales
-          .map((m) => m.toJson())
-          .toList();
+      final messagesJson = _dedupeMessages(messages).map((m) => m.toJson()).toList();
 
       await _box!.put(key, {
         'incident_id': incidentId,
+        'conversation_id': messagesJson.isNotEmpty
+            ? (messagesJson.last['conversation_id'] ?? messagesJson.first['conversation_id'] ?? 0)
+            : 0,
         'messages': messagesJson,
         'cached_at': DateTime.now().toIso8601String(),
       });
@@ -60,11 +61,12 @@ class ChatCache {
       final messages = messagesList
           .map((json) => Message.fromJson(Map<String, dynamic>.from(json)))
           .toList();
+      final deduped = _dedupeMessages(messages);
 
       print(
-        '[ChatCache] Loaded ${messages.length} messages from cache for incident $incidentId',
+        '[ChatCache] Loaded ${deduped.length} messages from cache for incident $incidentId',
       );
-      return messages;
+      return deduped;
     } catch (e) {
       print('[ChatCache] Error loading messages: $e');
       return [];
@@ -73,7 +75,7 @@ class ChatCache {
 
   /// Agrega un mensaje nuevo al cache (sin reemplazar todo)
   static Future<void> addMessage(Message message) async {
-    if (_box == null || message.isTemporary) return;
+      if (_box == null) return;
 
     try {
       final key = 'incident_${message.incidentId}';
@@ -94,7 +96,13 @@ class ChatCache {
 
       if (existingIndex != -1) {
         // Actualizar mensaje existente
-        messagesList[existingIndex] = message.toJson();
+        final existingMessage = Message.fromJson(
+          Map<String, dynamic>.from(messagesList[existingIndex]),
+        );
+        messagesList[existingIndex] =
+            _mergeMessageVersions(existingMessage, message).toJson();
+      } else if (_containsDuplicateSystemMessage(messagesList, message)) {
+        return;
       } else {
         // Agregar nuevo mensaje
         messagesList.add(message.toJson());
@@ -102,6 +110,7 @@ class ChatCache {
 
       await _box!.put(key, {
         'incident_id': message.incidentId,
+        'conversation_id': message.conversationId,
         'messages': messagesList,
         'cached_at': DateTime.now().toIso8601String(),
       });
@@ -137,6 +146,7 @@ class ChatCache {
 
         await _box!.put(key, {
           'incident_id': incidentId,
+          'conversation_id': data['conversation_id'] ?? 0,
           'messages': messagesList,
           'cached_at': DateTime.now().toIso8601String(),
         });
@@ -216,5 +226,130 @@ class ChatCache {
   static Future<void> close() async {
     await _box?.close();
     _box = null;
+  }
+
+  static Future<int?> getConversationId(int incidentId) async {
+    if (_box == null) return null;
+
+    try {
+      final key = 'incident_$incidentId';
+      final Map? data = _box!.get(key);
+      final raw = data?['conversation_id'];
+      if (raw is int) return raw;
+      if (raw is num) return raw.toInt();
+      return null;
+    } catch (e) {
+      print('[ChatCache] Error reading conversation id: $e');
+      return null;
+    }
+  }
+
+  static List<Message> _dedupeMessages(List<Message> source) {
+    final sorted = [...source]
+      ..sort(
+        (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
+          b.createdAt ?? DateTime.now(),
+        ),
+      );
+
+    final deduped = <Message>[];
+    for (final message in sorted) {
+      final existingIndex = message.id == null
+          ? -1
+          : deduped.indexWhere((entry) => entry.id == message.id);
+
+      if (existingIndex != -1) {
+        deduped[existingIndex] = _mergeMessageVersions(
+          deduped[existingIndex],
+          message,
+        );
+        continue;
+      }
+
+      final lastMessage = deduped.isEmpty ? null : deduped.last;
+      if (lastMessage != null &&
+          _isDuplicateSystemMessage(lastMessage, message)) {
+        deduped[deduped.length - 1] = message;
+        continue;
+      }
+
+      deduped.add(message);
+    }
+
+    return deduped;
+  }
+
+  static bool _containsDuplicateSystemMessage(
+    List<Map> messagesList,
+    Message incoming,
+  ) {
+    final existingMessages = messagesList
+        .map((json) => Message.fromJson(Map<String, dynamic>.from(json)))
+        .toList();
+    return existingMessages.any(
+      (existing) => _isDuplicateSystemMessage(existing, incoming),
+    );
+  }
+
+  static bool _isDuplicateSystemMessage(Message previous, Message incoming) {
+    if (previous.type != 'system' || incoming.type != 'system') {
+      return false;
+    }
+
+    if (
+        previous.conversationId != incoming.conversationId ||
+        previous.incidentId != incoming.incidentId ||
+        previous.senderId != incoming.senderId) {
+      return false;
+    }
+
+    final previousText = previous.message.trim();
+    final incomingText = incoming.message.trim();
+    if (previousText.isEmpty || previousText != incomingText) {
+      return false;
+    }
+
+    final previousTime = previous.createdAt ?? DateTime.now();
+    final incomingTime = incoming.createdAt ?? DateTime.now();
+    return incomingTime.difference(previousTime).inMinutes.abs() <= 2;
+  }
+
+  static Message _mergeMessageVersions(Message current, Message incoming) {
+    final mergedStatus = _messageStatusRank(incoming.status) >=
+            _messageStatusRank(current.status)
+        ? incoming.status
+        : current.status;
+
+    return current.copyWith(
+      id: incoming.id ?? current.id,
+      localId: current.localId ?? incoming.localId,
+      senderName: incoming.senderName ?? current.senderName,
+      senderRole: incoming.senderRole ?? current.senderRole,
+      message: incoming.message.isNotEmpty ? incoming.message : current.message,
+      type: incoming.type.isNotEmpty ? incoming.type : current.type,
+      createdAt: incoming.createdAt ?? current.createdAt,
+      sentAt: incoming.sentAt ?? current.sentAt ?? incoming.createdAt,
+      deliveredAt: incoming.deliveredAt ?? current.deliveredAt,
+      readAt: incoming.readAt ?? current.readAt,
+      status: mergedStatus,
+      errorMessage: incoming.errorMessage ?? current.errorMessage,
+      isRead: incoming.isRead ?? current.isRead,
+      isTemporary: incoming.isTemporary && current.id == null,
+    );
+  }
+
+  static int _messageStatusRank(MessageStatus status) {
+    switch (status) {
+      case MessageStatus.sending:
+        return 0;
+      case MessageStatus.sent:
+        return 1;
+      case MessageStatus.delivered:
+        return 2;
+      case MessageStatus.read:
+        return 3;
+      case MessageStatus.failed:
+        return -1;
+    }
   }
 }

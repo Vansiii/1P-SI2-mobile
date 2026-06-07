@@ -203,6 +203,8 @@ class WorkshopPublicProfile {
 
 class AssignmentHistoryItem {
   final int id;
+  final int incidentId;
+  final int workshopId;
   final String status;
   final String statusLabel;
   final String assignmentStrategy;
@@ -215,6 +217,8 @@ class AssignmentHistoryItem {
 
   AssignmentHistoryItem({
     required this.id,
+    required this.incidentId,
+    required this.workshopId,
     required this.status,
     required this.statusLabel,
     required this.assignmentStrategy,
@@ -229,6 +233,8 @@ class AssignmentHistoryItem {
   factory AssignmentHistoryItem.fromJson(Map<String, dynamic> json) {
     return AssignmentHistoryItem(
       id: json['id'] as int,
+      incidentId: json['incident_id'] as int? ?? 0,
+      workshopId: json['workshop_id'] as int? ?? 0,
       status: json['status'] as String,
       statusLabel: json['status_label'] as String,
       assignmentStrategy: json['assignment_strategy'] as String? ?? '',

@@ -47,9 +47,15 @@ class ProfileScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
-              await ref.read(authProvider.notifier).refreshProfile();
-              if (context.mounted) {
-                SnackBarUtils.showSuccess(context, 'Perfil actualizado');
+              try {
+                await ref.read(authProvider.notifier).refreshProfile();
+                if (context.mounted) {
+                  SnackBarUtils.showSuccess(context, 'Perfil actualizado');
+                }
+              } catch (_) {
+                if (context.mounted) {
+                  SnackBarUtils.showError(context, 'Sin conexion. Mostrando datos locales.');
+                }
               }
             },
           ),

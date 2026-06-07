@@ -1,122 +1,141 @@
-import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:drift/drift.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../../core/config/api_config.dart';
-import '../../../../data/services/storage_service.dart';
+import '../../../../core/services/data_cache.dart';
+import '../../../../data/db/app_database.dart';
+import '../../../../data/services/api_service.dart';
 import '../models/vehicle_model.dart';
 
 class VehicleRepository {
-  final StorageService _storageService = StorageService();
+  final ApiService _apiService;
+
+  VehicleRepository(this._apiService);
+
+  bool _isOfflineQueued(dynamic data) =>
+      data is Map && data['_offline_queued'] == true;
+
+  bool _isOfflineError(DioException e) =>
+      e.type == DioExceptionType.connectionError ||
+      e.type == DioExceptionType.connectionTimeout ||
+      e.type == DioExceptionType.receiveTimeout ||
+      (e.response?.statusCode == 0);
+
+  String _k(String key) =>
+      DataCache.currentUserId != null
+          ? DataCache.scopedKey(key, DataCache.currentUserId!)
+          : key;
+
+  Future<List<VehicleModel>> getVehicles({bool activeOnly = true}) async {
+    try {
+      final response = await _apiService.getRaw(
+        '${ApiConfig.vehiculos}?active_only=$activeOnly',
+      );
+      final jsonData = response.data as Map<String, dynamic>;
+      final vehiclesData = jsonData['data'] as List<dynamic>;
+      final vehicles = vehiclesData.map((v) => VehicleModel.fromJson(v)).toList();
+      DataCache.put(_k('vehicles_list'), vehiclesData);
+      return vehicles;
+    } on DioException catch (e) {
+      if (_isOfflineError(e)) {
+        final cached = DataCache.get(_k('vehicles_list'));
+        if (cached != null && cached is List) {
+          return cached.map((v) => VehicleModel.fromJson(v)).toList();
+        }
+        return [];
+      }
+      rethrow;
+    }
+  }
+
+  List<VehicleModel>? getCachedVehicles() {
+    final cached = DataCache.get(_k('vehicles_list'));
+    if (cached != null && cached is List) {
+      return cached.map((v) => VehicleModel.fromJson(v)).toList();
+    }
+    return null;
+  }
+
+  void cacheVehicles(List<VehicleModel> vehicles) {
+    DataCache.put(_k('vehicles_list'), vehicles.map((v) => v.toJson()).toList());
+  }
+
+  Future<String> _saveFileLocally(String sourcePath) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final localDir = Directory('${dir.path}/offline_uploads');
+    if (!await localDir.exists()) await localDir.create(recursive: true);
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${sourcePath.split('/').last}';
+    final destPath = '${localDir.path}/$fileName';
+    await File(sourcePath).copy(destPath);
+    return destPath;
+  }
 
   Future<String> uploadVehicleImage(File imageFile) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.vehiculos}/upload/image'),
-    );
-
-    request.headers['Authorization'] = 'Bearer $token';
-    request.files.add(
-      await http.MultipartFile.fromPath('file', imageFile.path),
-    );
-
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
-      // El backend retorna: { success: true, data: { file_url: "...", ... }, message: "..." }
-      return jsonData['data']['file_url'] as String;
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(
-        errorData['error']?['message'] ?? 'Error al subir imagen',
+    try {
+      final response = await _apiService.uploadFile(
+        '${ApiConfig.vehiculos}/upload/image',
+        imageFile.path,
       );
+      final jsonData = response.data as Map<String, dynamic>;
+      return jsonData['data']['file_url'] as String;
+    } on DioException catch (e) {
+      if (_isOfflineError(e)) {
+        final localPath = await _saveFileLocally(imageFile.path);
+        final db = AppDatabase();
+        final now = DateTime.now();
+        await db.offlineQueueDao.insertOperation(OfflineOperationsCompanion.insert(
+          clientOperationId: 'upload_${now.millisecondsSinceEpoch}',
+          userId: DataCache.currentUserId ?? 0,
+          operationType: 'UPLOAD_FILE',
+          endpoint: Value('${ApiConfig.vehiculos}/upload/image'),
+          method: Value('POST'),
+          payloadJson: '{"file_path":"$localPath","file_type":"image","entity_type":"vehicle"}',
+          createdAtClient: Value(now),
+          updatedAtClient: Value(now),
+        ));
+        return 'local://$localPath';
+      }
+      final errorData = e.response?.data;
+      if (errorData is Map) {
+        throw Exception(errorData['error']?['message'] ?? 'Error al subir imagen');
+      }
+      throw Exception('Error al subir imagen');
     }
   }
 
   Future<void> deleteVehicleImage(String fileUrl) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final response = await http.delete(
-      Uri.parse(
-        '${ApiConfig.baseUrl}${ApiConfig.vehiculos}/upload/image?file_url=${Uri.encodeComponent(fileUrl)}',
-      ),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode != 200) {
-      final errorData = json.decode(response.body);
-      throw Exception(
-        errorData['error']?['message'] ?? 'Error al eliminar imagen',
+    try {
+      await _apiService.deleteRaw(
+        '${ApiConfig.vehiculos}/upload/image',
+        queryParameters: {'file_url': fileUrl},
       );
-    }
-  }
-
-  Future<List<VehicleModel>> getVehicles({bool activeOnly = true}) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final response = await http.get(
-      Uri.parse(
-        '${ApiConfig.baseUrl}${ApiConfig.vehiculos}?active_only=$activeOnly',
-      ),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
-      final List<dynamic> vehiclesData = jsonData['data'] as List<dynamic>;
-
-      // Debug: Imprimir datos de vehículos (solo en desarrollo)
-      // print('🚗 Vehículos recibidos: ${vehiclesData.length}');
-      // for (var v in vehiclesData) {
-      //   print('  - ID: ${v['id']}, Imagen: ${v['imagen']}');
-      // }
-
-      return vehiclesData.map((v) => VehicleModel.fromJson(v)).toList();
-    } else if (response.statusCode == 403) {
-      throw Exception('No tienes permisos para ver vehículos');
-    } else if (response.statusCode == 401) {
-      throw Exception('Tu sesión ha expirado. Inicia sesión nuevamente');
-    } else {
-      try {
-        final errorData = json.decode(response.body);
-        final errorMessage =
-            errorData['error']?['message'] ?? 'Error al obtener vehículos';
-        throw Exception(errorMessage);
-      } catch (e) {
-        throw Exception('Error al obtener vehículos');
+    } on DioException catch (e) {
+      final errorData = e.response?.data;
+      if (errorData is Map) {
+        throw Exception(
+          errorData['error']?['message'] ?? 'Error al eliminar imagen',
+        );
       }
+      throw Exception('Error al eliminar imagen');
     }
   }
 
   Future<VehicleModel> getVehicle(int vehicleId) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.vehiculos}/$vehicleId'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
-      return VehicleModel.fromJson(jsonData['data']);
-    } else {
-      throw Exception('Error al obtener vehículo: ${response.body}');
+    try {
+      final response = await _apiService.getRaw('${ApiConfig.vehiculos}/$vehicleId');
+      final jsonData = response.data as Map<String, dynamic>;
+      final data = jsonData['data'];
+      DataCache.put(_k('vehicle_$vehicleId'), data);
+      return VehicleModel.fromJson(data);
+    } on DioException catch (e) {
+      if (_isOfflineError(e)) {
+        final cached = DataCache.get(_k('vehicle_$vehicleId'));
+        if (cached != null && cached is Map) {
+          return VehicleModel.fromJson(Map<String, dynamic>.from(cached));
+        }
+      }
+      rethrow;
     }
   }
 
@@ -128,33 +147,31 @@ class VehicleRepository {
     String? color,
     String? imagen,
   }) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
+    final body = {
+      'matricula': matricula,
+      'marca': marca,
+      'modelo': modelo,
+      'anio': anio,
+      'color': color,
+      'imagen': imagen,
+    };
 
-    final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.vehiculos}'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode({
-        'matricula': matricula,
-        'marca': marca,
-        'modelo': modelo,
-        'anio': anio,
-        'color': color,
-        'imagen': imagen,
-      }),
-    );
+    try {
+      final response = await _apiService.postRaw('${ApiConfig.vehiculos}', data: body);
+      final jsonData = response.data as Map<String, dynamic>;
 
-    if (response.statusCode == 201) {
-      final jsonData = json.decode(response.body);
+      if (_isOfflineQueued(jsonData['data'])) {
+        return VehicleModel(
+          id: 0, clientId: 0, matricula: matricula, marca: marca,
+          modelo: modelo, anio: anio, color: color, imagen: imagen,
+          isActive: true,
+          createdAt: DateTime.now(), updatedAt: DateTime.now(),
+        );
+      }
+
       return VehicleModel.fromJson(jsonData['data']);
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(
-        errorData['error']?['message'] ?? 'Error al crear vehículo',
-      );
+    } on DioException {
+      rethrow;
     }
   }
 
@@ -167,9 +184,6 @@ class VehicleRepository {
     String? imagen,
     bool? isActive,
   }) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
     final Map<String, dynamic> body = {};
     if (marca != null) body['marca'] = marca;
     if (modelo != null) body['modelo'] = modelo;
@@ -178,71 +192,60 @@ class VehicleRepository {
     if (imagen != null) body['imagen'] = imagen;
     if (isActive != null) body['is_active'] = isActive;
 
-    final response = await http.patch(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.vehiculos}/$vehicleId'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: json.encode(body),
-    );
+    try {
+      final response = await _apiService.patchRaw(
+        '${ApiConfig.vehiculos}/$vehicleId',
+        data: body,
+      );
+      final jsonData = response.data as Map<String, dynamic>;
 
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
+      if (_isOfflineQueued(jsonData['data'])) {
+        return VehicleModel(
+          id: vehicleId, clientId: 0,
+          matricula: body['matricula'] ?? '',
+          marca: body['marca'],
+          modelo: body['modelo'] ?? '',
+          anio: body['anio'] ?? 0,
+          color: body['color'],
+          imagen: body['imagen'],
+          isActive: body['is_active'] ?? isActive ?? true,
+          createdAt: DateTime.now(), updatedAt: DateTime.now(),
+        );
+      }
+
       return VehicleModel.fromJson(jsonData['data']);
-    } else {
-      throw Exception('Error al actualizar vehículo: ${response.body}');
+    } on DioException {
+      rethrow;
     }
   }
 
   Future<void> deleteVehicle(int vehicleId) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final response = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.vehiculos}/$vehicleId'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Error al eliminar vehículo: ${response.body}');
+    try {
+      final response = await _apiService.deleteRaw('${ApiConfig.vehiculos}/$vehicleId');
+      final jsonData = response.data as Map<String, dynamic>;
+      if (_isOfflineQueued(jsonData['data'])) return;
+    } on DioException {
+      rethrow;
     }
   }
 
   Future<Map<String, dynamic>> getVehicleHistory(int vehicleId) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) throw Exception('No hay token de autenticación');
-
-    final response = await http.get(
-      Uri.parse(
-        '${ApiConfig.baseUrl}${ApiConfig.vehiculos}/$vehicleId/historial',
-      ),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final jsonData = json.decode(response.body);
-      return jsonData['data'] as Map<String, dynamic>;
-    } else if (response.statusCode == 403) {
-      throw Exception('No tienes permisos para ver el historial');
-    } else if (response.statusCode == 401) {
-      throw Exception('Tu sesión ha expirado. Inicia sesión nuevamente');
-    } else {
-      try {
-        final errorData = json.decode(response.body);
-        final errorMessage =
-            errorData['error']?['message'] ??
-            'Error al obtener historial del vehículo';
-        throw Exception(errorMessage);
-      } catch (e) {
-        throw Exception('Error al obtener historial del vehículo');
+    try {
+      final response = await _apiService.getRaw(
+        '${ApiConfig.vehiculos}/$vehicleId/historial',
+      );
+      final jsonData = response.data as Map<String, dynamic>;
+      final data = jsonData['data'];
+      DataCache.put(_k('vehicle_${vehicleId}_history'), data);
+      return data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      if (_isOfflineError(e)) {
+        final cached = DataCache.get(_k('vehicle_${vehicleId}_history'));
+        if (cached != null && cached is Map) {
+          return Map<String, dynamic>.from(cached);
+        }
       }
+      rethrow;
     }
   }
 }

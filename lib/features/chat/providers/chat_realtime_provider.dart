@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchanic_repair/core/models/realtime_event.dart';
 import 'package:merchanic_repair/core/services/event_dispatcher_service.dart';
 import 'package:merchanic_repair/features/incidents/providers/incident_realtime_provider.dart';
+import 'package:merchanic_repair/features/auth/providers/auth_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Message model
@@ -130,11 +131,14 @@ class ChatRealtimeState {
 
 /// Maintains real-time chat state by subscribing to [EventDispatcherService].
 class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
-  ChatRealtimeNotifier(this._dispatcher) : super(const ChatRealtimeState()) {
+  ChatRealtimeNotifier(this._dispatcher, {int? currentUserId})
+      : _currentUserId = currentUserId,
+        super(const ChatRealtimeState()) {
     _subscribe();
   }
 
   final EventDispatcherService _dispatcher;
+  final int? _currentUserId;
   final List<StreamSubscription<RealTimeEvent>> _subscriptions = [];
   final Map<String, Timer> _typingExpiryTimers = {};
 
@@ -204,6 +208,9 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 
   /// Requirement 5.2 — show typing indicator.
   void _onUserTyping(ChatUserTypingEvent e) {
+    if (_currentUserId != null && e.userId == _currentUserId) {
+      return;
+    }
     final typing = List<String>.from(state.typingUsersFor(e.incidentId));
     if (!typing.contains(e.userName)) {
       typing.add(e.userName);
@@ -423,7 +430,9 @@ class ChatRealtimeNotifier extends StateNotifier<ChatRealtimeState> {
 final chatRealtimeProvider =
     StateNotifierProvider<ChatRealtimeNotifier, ChatRealtimeState>((ref) {
       final dispatcher = ref.watch(eventDispatcherServiceProvider);
-      return ChatRealtimeNotifier(dispatcher);
+      final authState = ref.watch(authProvider);
+      return ChatRealtimeNotifier(dispatcher,
+          currentUserId: authState.user?.id);
     });
 
 /// Convenience provider: messages for a single incident, ordered oldest-first.

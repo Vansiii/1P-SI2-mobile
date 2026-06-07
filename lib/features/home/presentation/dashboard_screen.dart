@@ -7,6 +7,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/core/config/app_constants.dart';
 import 'package:merchanic_repair/core/widgets/exit_app_dialog.dart';
+import 'package:merchanic_repair/core/widgets/sync_status_badge.dart';
+import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import 'package:merchanic_repair/shared/widgets/app_logo.dart';
 import 'package:merchanic_repair/features/auth/providers/auth_provider.dart';
 import 'package:merchanic_repair/features/admin/permissions_screen.dart';
@@ -175,6 +177,10 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           actions: [
+            const SyncStatusBadge(
+              showLabel: false,
+              child: Icon(Icons.sync, color: AppColors.textMain, size: 22),
+            ),
             IconButton(
               icon: Stack(
                 children: [
@@ -878,6 +884,15 @@ class DashboardScreen extends ConsumerWidget {
                 const Divider(height: 32),
                 _buildDrawerItem(
                   context,
+                  icon: Icons.sync,
+                  title: 'Centro de Sincronización',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/sync-center');
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
                   icon: Icons.settings,
                   title: 'Configuración',
                   onTap: () {
@@ -986,6 +1001,13 @@ class DashboardScreen extends ConsumerWidget {
             ],
           ),
           actions: [
+            const SyncStatusBadge(
+              showLabel: false,
+              child: Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: Icon(Icons.sync, color: AppColors.textMain, size: 22),
+              ),
+            ),
             // Indicador de estado en línea
             Container(
               margin: const EdgeInsets.only(right: 16),
@@ -1207,11 +1229,7 @@ class DashboardScreen extends ConsumerWidget {
                     initialZoom: 15,
                   ),
                   children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.mobile',
-                    ),
+                    const CachedOsmTileLayer(),
                     MarkerLayer(
                       markers: [
                         Marker(
@@ -1221,6 +1239,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           width: 50,
                           height: 50,
+                          alignment: Alignment.topCenter,
                           child: const Icon(
                             Icons.location_on,
                             color: AppColors.error,
@@ -1536,6 +1555,15 @@ class DashboardScreen extends ConsumerWidget {
                   onTap: () {
                     Navigator.pop(context);
                     context.go('/profile');
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.sync,
+                  title: 'Centro de Sincronización',
+                  onTap: () {
+                    Navigator.pop(context);
+                    context.go('/sync-center');
                   },
                 ),
                 _buildDrawerItem(

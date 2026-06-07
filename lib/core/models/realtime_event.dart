@@ -547,12 +547,14 @@ class IncidentAssignmentAcceptedEvent extends RealTimeEvent {
     required this.incidentId,
     required this.workshopId,
     this.technicianId,
+    this.newStatus,
     this.acceptedAt,
   }) : super(eventType: 'incident.assignment_accepted');
 
   final int incidentId;
   final int workshopId;
   final int? technicianId;
+  final String? newStatus;
   final String? acceptedAt;
 
   factory IncidentAssignmentAcceptedEvent.fromJson(Map<String, dynamic> json) {
@@ -565,6 +567,7 @@ class IncidentAssignmentAcceptedEvent extends RealTimeEvent {
       incidentId: _int(src, 'incident_id'),
       workshopId: _int(src, 'workshop_id'),
       technicianId: _intOpt(src, 'technician_id'),
+      newStatus: _str(src, 'new_status'),
       acceptedAt: src['accepted_at'] as String?,
     );
   }
@@ -576,6 +579,7 @@ class IncidentAssignmentAcceptedEvent extends RealTimeEvent {
       'incident_id': incidentId,
       'workshop_id': workshopId,
       if (technicianId != null) 'technician_id': technicianId,
+      if (newStatus != null) 'new_status': newStatus,
       if (acceptedAt != null) 'accepted_at': acceptedAt,
     },
   };
@@ -589,12 +593,14 @@ class IncidentAssignmentRejectedEvent extends RealTimeEvent {
     required this.incidentId,
     required this.workshopId,
     this.reason,
+    this.assignmentMode,
     this.rejectedAt,
   }) : super(eventType: 'incident.assignment_rejected');
 
   final int incidentId;
   final int workshopId;
   final String? reason;
+  final String? assignmentMode;
   final String? rejectedAt;
 
   factory IncidentAssignmentRejectedEvent.fromJson(Map<String, dynamic> json) {
@@ -607,6 +613,7 @@ class IncidentAssignmentRejectedEvent extends RealTimeEvent {
       incidentId: _int(src, 'incident_id'),
       workshopId: _int(src, 'workshop_id'),
       reason: src['reason'] as String?,
+      assignmentMode: _str(src, 'assignment_mode'),
       rejectedAt: src['rejected_at'] as String?,
     );
   }
@@ -618,6 +625,7 @@ class IncidentAssignmentRejectedEvent extends RealTimeEvent {
       'incident_id': incidentId,
       'workshop_id': workshopId,
       if (reason != null) 'reason': reason,
+      if (assignmentMode != null) 'assignment_mode': assignmentMode,
       if (rejectedAt != null) 'rejected_at': rejectedAt,
     },
   };
@@ -729,18 +737,20 @@ class IncidentReassignedEvent extends RealTimeEvent {
     required super.timestamp,
     required super.priority,
     required this.incidentId,
-    required this.previousWorkshopId,
+    this.previousWorkshopId,
     required this.newWorkshopId,
     this.newTechnicianId,
     this.reason,
+    this.newStatus,
     required this.reassignedAt,
   }) : super(eventType: 'incident.reassigned');
 
   final int incidentId;
-  final int previousWorkshopId;
+  final int? previousWorkshopId;
   final int newWorkshopId;
   final int? newTechnicianId;
   final String? reason;
+  final String? newStatus;
   final String reassignedAt;
 
   factory IncidentReassignedEvent.fromJson(Map<String, dynamic> json) {
@@ -751,10 +761,11 @@ class IncidentReassignedEvent extends RealTimeEvent {
       timestamp: _str(json, 'timestamp'),
       priority: _priority(json),
       incidentId: _int(src, 'incident_id'),
-      previousWorkshopId: _int(src, 'previous_workshop_id'),
+      previousWorkshopId: _intOpt(src, 'previous_workshop_id'),
       newWorkshopId: _int(src, 'new_workshop_id'),
       newTechnicianId: src['new_technician_id'] as int?,
       reason: src['reason'] as String?,
+      newStatus: _str(src, 'new_status'),
       reassignedAt: _str(src, 'reassigned_at'),
     );
   }
@@ -764,10 +775,11 @@ class IncidentReassignedEvent extends RealTimeEvent {
     ...super.toJson(),
     'payload': {
       'incident_id': incidentId,
-      'previous_workshop_id': previousWorkshopId,
+      if (previousWorkshopId != null) 'previous_workshop_id': previousWorkshopId,
       'new_workshop_id': newWorkshopId,
       if (newTechnicianId != null) 'new_technician_id': newTechnicianId,
       if (reason != null) 'reason': reason,
+      if (newStatus != null) 'new_status': newStatus,
       'reassigned_at': reassignedAt,
     },
   };

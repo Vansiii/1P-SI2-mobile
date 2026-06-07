@@ -265,6 +265,14 @@ class TechnicianLocationService {
 
       print('📤 TechnicianLocationService: Enviando ubicación al backend...');
 
+      // Only send location if there's an active incident to track for
+      if (currentIncidentId == null) {
+        print(
+          '⏭️ TechnicianLocationService: Sin incidente activo, omitiendo envío',
+        );
+        return;
+      }
+
       // Send via WebSocket for real-time delivery (low latency, primary channel)
       final wsSent = _trySendViaWebSocket(position);
 

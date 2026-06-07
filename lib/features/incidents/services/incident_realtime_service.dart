@@ -204,7 +204,7 @@ class IncidentRealtimeService {
 
       // ✅ Update incident with workshop ID and status
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, {
-        'estado_actual': 'asignado',
+        'estado_actual': 'pendiente',
         'taller_id': event.workshopId,
         'assigned_at': DateTime.now().toIso8601String(),
       });
@@ -234,7 +234,9 @@ class IncidentRealtimeService {
 
       // ✅ Update incident with workshop, technician, and status
       final updates = <String, dynamic>{
-        'estado_actual': event.technicianId != null ? 'en_proceso' : 'asignado',
+        'estado_actual':
+            event.newStatus ??
+            (event.technicianId != null ? 'en_proceso' : 'asignado'),
       };
 
       updates['taller_id'] = event.workshopId;
@@ -261,11 +263,15 @@ class IncidentRealtimeService {
     );
 
     try {
+      final isManual = event.assignmentMode == 'manual';
+
       // Show notification
       await _notificationService.showIncidentNotification(
         incidentId: event.incidentId,
         title: 'Asignación Rechazada #${event.incidentId}',
-        body: event.reason ?? 'El taller ha rechazado el incidente',
+        body: isManual
+            ? 'El taller rechazó tu solicitud. Puedes elegir otro.'
+            : (event.reason ?? 'El taller ha rechazado el incidente'),
       );
 
       // ✅ Update incident - clear workshop/technician and set to pending
@@ -293,19 +299,29 @@ class IncidentRealtimeService {
     );
 
     try {
+      final isManual = event.assignmentMode == 'manual';
+
       // Show notification
       await _notificationService.showIncidentNotification(
         incidentId: event.incidentId,
         title: 'Timeout de Asignación #${event.incidentId}',
-        body:
-            'El taller ${event.workshopName} no respondió en ${event.timeoutMinutes} minutos',
+        body: isManual
+            ? 'El taller ${event.workshopName} no respondió. Puedes elegir otro.'
+            : 'El taller ${event.workshopName} no respondió en ${event.timeoutMinutes} minutos',
       );
 
-      // Update incident status
-      _incidentsNotifier.updateIncidentStatusFromWebSocket(
-        event.incidentId,
-        'timeout',
-      );
+      if (isManual) {
+        _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, {
+          'estado_actual': 'pendiente',
+          'taller_id': null,
+          'tecnico_id': null,
+        });
+      } else {
+        _incidentsNotifier.updateIncidentStatusFromWebSocket(
+          event.incidentId,
+          'timeout',
+        );
+      }
     } catch (e) {
       debugPrint(
         '[IncidentRealtimeService] Error handling assignment_timeout: $e',
@@ -328,14 +344,21 @@ class IncidentRealtimeService {
       // Map status to Spanish labels
       final statusLabels = {
         'pending': 'Pendiente',
+        'pendiente': 'Pendiente',
         'assigned': 'Asignado',
+        'asignado': 'Asignado',
         'accepted': 'Aceptado',
+        'aceptado': 'Aceptado',
         'rejected': 'Rechazado',
         'on_way': 'En camino',
+        'en_camino': 'En camino',
         'arrived': 'Técnico llegó',
         'in_progress': 'En progreso',
+        'en_proceso': 'En progreso',
         'completed': 'Completado',
+        'resuelto': 'Resuelto',
         'cancelled': 'Cancelado',
+        'cancelado': 'Cancelado',
         'sin_taller_disponible': 'Sin taller disponible',
       };
 
@@ -345,7 +368,9 @@ class IncidentRealtimeService {
       // Show notification for important status changes
       if ([
         'completed',
+        'resuelto',
         'cancelled',
+        'cancelado',
         'rejected',
         'sin_taller_disponible',
       ].contains(event.newStatus)) {
@@ -452,7 +477,7 @@ class IncidentRealtimeService {
       );
 
       // ✅ Update incident with technician and status
-      final updates = <String, dynamic>{'estado_actual': 'tecnico_llego'};
+      final updates = <String, dynamic>{'estado_actual': 'en_proceso'};
 
       updates['tecnico_id'] = event.technicianId;
 
@@ -484,7 +509,7 @@ class IncidentRealtimeService {
       // Update incident status
       _incidentsNotifier.updateIncidentStatusFromWebSocket(
         event.incidentId,
-        'in_progress',
+        'en_proceso',
       );
     } catch (e) {
       debugPrint('[IncidentRealtimeService] Error handling work_started: $e');
@@ -510,7 +535,7 @@ class IncidentRealtimeService {
 
       // ✅ Update incident with completion timestamp
       _incidentsNotifier.updateIncidentFromWebSocket(event.incidentId, {
-        'estado_actual': 'completado',
+        'estado_actual': 'resuelto',
         'resolved_at': DateTime.now().toIso8601String(),
       });
     } catch (e) {

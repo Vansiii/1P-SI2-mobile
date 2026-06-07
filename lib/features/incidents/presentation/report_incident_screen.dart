@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,8 +10,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
+import '../../../widgets/map/cached_osm_tile_layer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
+import '../../../shared/widgets/offline_aware_image.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 import '../../vehicles/providers/vehicle_provider.dart';
@@ -348,7 +351,9 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
               : 'Emergencia reportada. Un taller será asignado pronto.',
         );
         if (_assignmentMode == 'manual') {
-          context.replace('/incidents/${incident.id}/select-workshop');
+          context.pushReplacement(
+            '/incidents/${incident.id}/select-workshop?origin=report',
+          );
         } else {
           context.pop();
         }
@@ -438,12 +443,7 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
                                 ),
                               ),
                               children: [
-                                TileLayer(
-                                  urlTemplate:
-                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                  userAgentPackageName: 'com.example.mobile',
-                                  maxZoom: 19,
-                                ),
+                                const CachedOsmTileLayer(),
                                 MarkerLayer(
                                   markers: [
                                     Marker(
@@ -453,6 +453,7 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
                                       ),
                                       width: 50,
                                       height: 50,
+                                      alignment: Alignment.topCenter,
                                       child: const Icon(
                                         Icons.location_on,
                                         color: AppColors.error,
@@ -1283,22 +1284,14 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
                                             ? ClipRRect(
                                                 borderRadius:
                                                     BorderRadius.circular(8),
-                                                child: Image.network(
-                                                  vehicle.imagen!,
+                                                child: OfflineAwareImage(
+                                                  imageUrl: vehicle.imagen!,
                                                   fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) {
-                                                        return const Icon(
-                                                          Icons.directions_car,
-                                                          color:
-                                                              AppColors.primary,
-                                                          size: 35,
-                                                        );
-                                                      },
+                                                  errorWidget: const Icon(
+                                                    Icons.directions_car,
+                                                    color: AppColors.primary,
+                                                    size: 35,
+                                                  ),
                                                 ),
                                               )
                                             : const Icon(
@@ -1383,16 +1376,14 @@ class _ReportIncidentScreenState extends ConsumerState<ReportIncidentScreen> {
           child: vehicle.imagen != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    vehicle.imagen!,
+                  child: OfflineAwareImage(
+                    imageUrl: vehicle.imagen!,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.directions_car,
-                        color: AppColors.primary,
-                        size: 30,
-                      );
-                    },
+                    errorWidget: const Icon(
+                      Icons.directions_car,
+                      color: AppColors.primary,
+                      size: 30,
+                    ),
                   ),
                 )
               : const Icon(

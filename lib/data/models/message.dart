@@ -6,6 +6,7 @@ class Message {
   final String? localId; // ID local temporal (UUID)
 
   // Datos del mensaje
+  final int conversationId;
   final int incidentId;
   final int senderId;
   final String? senderName;
@@ -31,6 +32,7 @@ class Message {
   Message({
     this.id,
     this.localId,
+    this.conversationId = 0,
     required this.incidentId,
     required this.senderId,
     this.senderName,
@@ -75,6 +77,7 @@ class Message {
   Message copyWith({
     int? id,
     String? localId,
+    int? conversationId,
     int? incidentId,
     int? senderId,
     String? senderName,
@@ -93,6 +96,7 @@ class Message {
     return Message(
       id: id ?? this.id,
       localId: localId ?? this.localId,
+      conversationId: conversationId ?? this.conversationId,
       incidentId: incidentId ?? this.incidentId,
       senderId: senderId ?? this.senderId,
       senderName: senderName ?? this.senderName,
@@ -111,9 +115,11 @@ class Message {
   }
 
   factory Message.fromJson(Map<String, dynamic> json) {
+    final statusRaw = json['status'] as String?;
     return Message(
       id: (json['id'] as num?)?.toInt(),
       localId: json['local_id'] as String?,
+      conversationId: (json['conversation_id'] as num?)?.toInt() ?? 0,
       incidentId: (json['incident_id'] as num?)?.toInt() ?? 0,
       senderId: (json['sender_id'] as num?)?.toInt() ?? 0,
       senderName: json['sender_name'] as String?,
@@ -124,9 +130,10 @@ class Message {
       sentAt: _parseServerDateTime(json['sent_at'] as String?),
       deliveredAt: _parseServerDateTime(json['delivered_at'] as String?),
       readAt: _parseServerDateTime(json['read_at'] as String?),
-      status: _parseStatus(json),
+      status: _parseStatus(json, statusRaw),
+      errorMessage: json['error_message'] as String?,
       isRead: json['is_read'] as bool?,
-      isTemporary: false,
+      isTemporary: json['is_temporary'] as bool? ?? false,
     );
   }
 
@@ -138,9 +145,25 @@ class Message {
     return DateTime.parse(normalized).toLocal();
   }
 
-  static MessageStatus _parseStatus(Map<String, dynamic> json) {
+  static MessageStatus _parseStatus(
+    Map<String, dynamic> json,
+    String? statusRaw,
+  ) {
+    switch (statusRaw) {
+      case 'sending':
+        return MessageStatus.sending;
+      case 'failed':
+        return MessageStatus.failed;
+      case 'read':
+        return MessageStatus.read;
+      case 'delivered':
+        return MessageStatus.delivered;
+      case 'sent':
+        return MessageStatus.sent;
+    }
     if (json['read_at'] != null) return MessageStatus.read;
     if (json['delivered_at'] != null) return MessageStatus.delivered;
+    if (json['is_temporary'] == true) return MessageStatus.sending;
     if (json['sent_at'] != null) return MessageStatus.sent;
     return MessageStatus.sent;
   }
@@ -149,6 +172,7 @@ class Message {
     return {
       if (id != null) 'id': id,
       if (localId != null) 'local_id': localId,
+      'conversation_id': conversationId,
       'incident_id': incidentId,
       'sender_id': senderId,
       'sender_name': senderName,
@@ -160,6 +184,9 @@ class Message {
       'delivered_at': deliveredAt?.toUtc().toIso8601String(),
       'read_at': readAt?.toUtc().toIso8601String(),
       'is_read': isRead,
+      'status': status.name,
+      'error_message': errorMessage,
+      'is_temporary': isTemporary,
     };
   }
 }

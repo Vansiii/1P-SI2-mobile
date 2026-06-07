@@ -163,6 +163,17 @@ class IncidentAnalysisRealtimeNotifier
         '[IncidentAnalysisRealtimeNotifier] Error reloading incident: $error',
       );
     }
+
+    // Also fetch and cache the full AI analysis data so it's available offline
+    try {
+      await _ref
+          .read(incidentsProvider.notifier)
+          .getLatestIncidentAiAnalysis(e.incidentId);
+    } catch (error) {
+      debugPrint(
+        '[IncidentAnalysisRealtimeNotifier] Error caching AI analysis: $error',
+      );
+    }
   }
 
   void _onAnalysisFailed(IncidentAnalysisFailedEvent e) async {

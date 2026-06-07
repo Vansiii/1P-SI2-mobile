@@ -8,8 +8,13 @@ import '../data/models/workshop_selection_model.dart';
 
 class WorkshopSelectionScreen extends ConsumerStatefulWidget {
   final int incidentId;
+  final String origin;
 
-  const WorkshopSelectionScreen({super.key, required this.incidentId});
+  const WorkshopSelectionScreen({
+    super.key,
+    required this.incidentId,
+    this.origin = 'report',
+  });
 
   @override
   ConsumerState<WorkshopSelectionScreen> createState() =>
@@ -66,7 +71,12 @@ class _WorkshopSelectionScreenState
       if (!mounted) return;
       SnackBarUtils.showSuccess(context, result.message);
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) context.go('/incidents/${widget.incidentId}');
+        if (!mounted) return;
+        if (widget.origin == 'detail' && Navigator.of(context).canPop()) {
+          context.pop(true);
+          return;
+        }
+        context.go('/incidents/${widget.incidentId}');
       });
     } catch (e) {
       if (!mounted) return;
@@ -85,9 +95,20 @@ class _WorkshopSelectionScreenState
           IconButton(
             icon: const Icon(Icons.map),
             tooltip: 'Ver en mapa',
-            onPressed: () {
+            onPressed: () async {
               state.whenOrNull(data: (workshops) {
-                context.push('/incidents/${widget.incidentId}/workshop-map');
+                context.push<bool>(
+                  '/incidents/${widget.incidentId}/workshop-map'
+                  '?origin=${widget.origin}',
+                ).then((selected) {
+                  if (selected != true || !mounted) return;
+                  if (widget.origin == 'detail' &&
+                      Navigator.of(context).canPop()) {
+                    context.pop(true);
+                    return;
+                  }
+                  context.go('/incidents/${widget.incidentId}');
+                });
               });
             },
           ),
@@ -226,11 +247,20 @@ class _WorkshopSelectionScreenState
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
+        child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => context.push(
-          '/incidents/${widget.incidentId}/workshop-detail/${w.workshopId}',
-        ),
+        onTap: () async {
+          final selected = await context.push<bool>(
+            '/incidents/${widget.incidentId}/workshop-detail/${w.workshopId}'
+            '?origin=${widget.origin}',
+          );
+          if (selected != true || !mounted) return;
+          if (widget.origin == 'detail' && Navigator.of(context).canPop()) {
+            context.pop(true);
+            return;
+          }
+          context.go('/incidents/${widget.incidentId}');
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
