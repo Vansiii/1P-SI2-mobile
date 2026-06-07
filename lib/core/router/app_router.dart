@@ -27,6 +27,7 @@ import '../../features/incidents/presentation/incident_detail_screen.dart';
 import '../../features/incidents/presentation/workshop_selection_screen.dart';
 import '../../features/incidents/presentation/workshop_map_screen.dart';
 import '../../features/incidents/presentation/workshop_detail_screen.dart';
+import '../../features/reports/presentation/client_reports_screen.dart';
 import '../widgets/sync_center_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
@@ -164,6 +165,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: '/sync-center',
         name: 'sync-center',
         builder: (context, state) => const SyncCenterScreen(),
+      ),
+      GoRoute(
+        path: '/reports',
+        name: 'reports',
+        builder: (context, state) => const ClientReportsScreen(),
       ),
       GoRoute(
         path: '/edit-profile',

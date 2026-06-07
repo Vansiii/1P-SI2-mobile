@@ -6,6 +6,7 @@ import '../../../shared/utils/snackbar_utils.dart';
 import '../../../shared/utils/permission_utils.dart';
 import '../../profile/presentation/profile_screen.dart';
 import '../../security/presentation/security_screen.dart';
+import '../../reports/presentation/client_reports_screen.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../incidents/presentation/technician_incidents_screen.dart';
 import 'dashboard_screen.dart';
@@ -91,18 +92,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       DashboardScreen(),
       ProfileScreen(),
       SecurityScreen(),
+      ClientReportsScreen(),
     ];
 
     return Scaffold(
       body: Column(
         children: [
-          Expanded(child: IndexedStack(index: _currentIndex, children: clientScreens)),
+          Expanded(child: IndexedStack(index: _currentIndex > 3 ? 0 : _currentIndex, children: clientScreens)),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
+        currentIndex: _currentIndex > 3 ? 0 : _currentIndex,
         onTap: (index) {
-          if (index == 3) {
+          if (index == 4) {
             _openCamera();
           } else {
             setState(() => _currentIndex = index);
@@ -126,6 +128,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: Icon(Icons.security_outlined),
             activeIcon: Icon(Icons.security),
             label: 'Seguridad',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart_outlined),
+            activeIcon: Icon(Icons.bar_chart),
+            label: 'Reportes',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.camera_alt_outlined),

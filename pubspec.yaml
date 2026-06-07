@@ -65,6 +65,8 @@ dependencies:
   # Audio Recording
   record: ^6.2.0
   path_provider: ^2.1.5
+  speech_to_text: ^7.4.0
+  open_filex: ^4.5.0
   
   # HTTP (for API calls)
   http: ^1.2.2
