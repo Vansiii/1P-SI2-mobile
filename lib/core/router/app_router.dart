@@ -28,6 +28,9 @@ import '../../features/incidents/presentation/workshop_selection_screen.dart';
 import '../../features/incidents/presentation/workshop_map_screen.dart';
 import '../../features/incidents/presentation/workshop_detail_screen.dart';
 import '../../features/reports/presentation/client_reports_screen.dart';
+import '../../features/cotizaciones/presentation/cotizaciones_list_screen.dart';
+import '../../features/cotizaciones/presentation/solicitar_cotizacion_screen.dart';
+import '../../features/cotizaciones/presentation/cotizacion_detail_screen.dart';
 import '../widgets/sync_center_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
@@ -298,6 +301,26 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             workshopId: workshopId,
             origin: state.uri.queryParameters['origin'] ?? 'report',
           );
+        },
+      ),
+
+      // Cotizaciones Routes (CU32)
+      GoRoute(
+        path: '/cotizaciones',
+        name: 'cotizaciones',
+        builder: (context, state) => const CotizacionesListScreen(),
+      ),
+      GoRoute(
+        path: '/cotizaciones/solicitar',
+        name: 'solicitar-cotizacion',
+        builder: (context, state) => const SolicitarCotizacionScreen(),
+      ),
+      GoRoute(
+        path: '/cotizaciones/:id',
+        name: 'cotizacion-detail',
+        builder: (context, state) {
+          final id = int.parse(state.pathParameters['id']!);
+          return CotizacionDetailScreen(cotizacionId: id);
         },
       ),
     ],

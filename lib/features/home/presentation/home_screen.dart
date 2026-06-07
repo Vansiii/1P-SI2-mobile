@@ -7,6 +7,7 @@ import '../../../shared/utils/permission_utils.dart';
 import '../../profile/presentation/profile_screen.dart';
 import '../../security/presentation/security_screen.dart';
 import '../../reports/presentation/client_reports_screen.dart';
+import '../../cotizaciones/presentation/cotizaciones_list_screen.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../incidents/presentation/technician_incidents_screen.dart';
 import 'dashboard_screen.dart';
@@ -90,6 +91,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildClientHome() {
     final List<Widget> clientScreens = const [
       DashboardScreen(),
+      CotizacionesListScreen(),
       ProfileScreen(),
       SecurityScreen(),
       ClientReportsScreen(),
@@ -98,13 +100,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       body: Column(
         children: [
-          Expanded(child: IndexedStack(index: _currentIndex > 3 ? 0 : _currentIndex, children: clientScreens)),
+          Expanded(child: IndexedStack(index: _currentIndex > 4 ? 0 : _currentIndex, children: clientScreens)),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex > 3 ? 0 : _currentIndex,
+        currentIndex: _currentIndex > 4 ? 0 : _currentIndex,
         onTap: (index) {
-          if (index == 4) {
+          if (index == 5) {
             _openCamera();
           } else {
             setState(() => _currentIndex = index);
@@ -120,7 +122,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             label: 'Inicio',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
+            icon: Icon(Icons.description_outlined),
+            activeIcon: Icon(Icons.description),
+            label: 'Cotizar',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outlined),
             activeIcon: Icon(Icons.person),
             label: 'Perfil',
           ),
