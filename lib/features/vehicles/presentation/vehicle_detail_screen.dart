@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/data_cache.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/utils/snackbar_utils.dart';
+import '../../../shared/widgets/offline_aware_image.dart';
 import '../providers/vehicle_provider.dart';
 import '../data/models/vehicle_model.dart';
 
@@ -17,10 +19,30 @@ class VehicleDetailScreen extends ConsumerWidget {
 
     return vehiclesState.when(
       data: (vehicles) {
-        final vehicle = vehicles.firstWhere(
-          (v) => v.id == vehicleId,
-          orElse: () => throw Exception('Vehículo no encontrado'),
-        );
+        VehicleModel? vehicle;
+        try {
+          vehicle = vehicles.firstWhere((v) => v.id == vehicleId);
+        } catch (_) {
+          final cached = DataCache.get(
+            DataCache.currentUserId != null
+                ? DataCache.scopedKey('vehicle_$vehicleId', DataCache.currentUserId!)
+                : 'vehicle_$vehicleId',
+          );
+          if (cached is Map) {
+            vehicle = VehicleModel.fromJson(Map<String, dynamic>.from(cached));
+          }
+        }
+        if (vehicle == null) {
+          return Scaffold(
+            backgroundColor: AppColors.baseBg,
+            appBar: AppBar(
+              title: const Text('Vehículo no encontrado'),
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            body: const Center(child: Text('No se pudo cargar el vehículo')),
+          );
+        }
 
         return _buildDetailScreen(context, ref, vehicle);
       },
@@ -88,19 +110,17 @@ class VehicleDetailScreen extends ConsumerWidget {
                   ? Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.network(
-                          vehicle.imagen!,
+                        OfflineAwareImage(
+                          imageUrl: vehicle.imagen!,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              child: const Icon(
-                                Icons.directions_car,
-                                size: 100,
-                                color: AppColors.primary,
-                              ),
-                            );
-                          },
+                          errorWidget: Container(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            child: const Icon(
+                              Icons.directions_car,
+                              size: 100,
+                              color: AppColors.primary,
+                            ),
+                          ),
                         ),
                         // Gradiente para mejor legibilidad
                         Container(

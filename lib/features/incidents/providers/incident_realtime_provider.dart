@@ -47,21 +47,28 @@ class IncidentRealtimeState {
 
   IncidentRealtimeState copyWith({
     String? status,
-    int? technicianId,
-    int? workshopId,
-    int? estimatedArrivalMinutes,
-    String? reason,
-    String? lastUpdatedAt,
+    Object? technicianId = _sentinel,
+    Object? workshopId = _sentinel,
+    Object? estimatedArrivalMinutes = _sentinel,
+    Object? reason = _sentinel,
+    Object? lastUpdatedAt = _sentinel,
   }) {
     return IncidentRealtimeState(
       incidentId: incidentId,
       status: status ?? this.status,
-      technicianId: technicianId ?? this.technicianId,
-      workshopId: workshopId ?? this.workshopId,
-      estimatedArrivalMinutes:
-          estimatedArrivalMinutes ?? this.estimatedArrivalMinutes,
-      reason: reason ?? this.reason,
-      lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
+      technicianId: technicianId == _sentinel
+          ? this.technicianId
+          : technicianId as int?,
+      workshopId: workshopId == _sentinel
+          ? this.workshopId
+          : workshopId as int?,
+      estimatedArrivalMinutes: estimatedArrivalMinutes == _sentinel
+          ? this.estimatedArrivalMinutes
+          : estimatedArrivalMinutes as int?,
+      reason: reason == _sentinel ? this.reason : reason as String?,
+      lastUpdatedAt: lastUpdatedAt == _sentinel
+          ? this.lastUpdatedAt
+          : lastUpdatedAt as String?,
     );
   }
 
@@ -167,7 +174,7 @@ class IncidentRealtimeNotifier
   void _onAssigned(IncidentAssignedEvent e) {
     _patch(
       e.incidentId,
-      status: 'assigned',
+      status: 'pendiente',
       workshopId: e.workshopId,
       technicianId: e.technicianId,
       estimatedArrivalMinutes: e.estimatedTime,
@@ -225,7 +232,7 @@ class IncidentRealtimeNotifier
   void _onTechnicianArrived(IncidentTechnicianArrivedEvent e) {
     _patch(
       e.incidentId,
-      status: 'en_sitio', // Use Spanish status to match backend
+      status: 'en_proceso', // Backend persists this transition as en_proceso
       technicianId: e.technicianId,
       lastUpdatedAt: e.arrivedAt,
     );
@@ -237,7 +244,7 @@ class IncidentRealtimeNotifier
   void _onAssignmentAccepted(IncidentAssignmentAcceptedEvent e) {
     _patch(
       e.incidentId,
-      status: 'assignment_accepted',
+      status: e.newStatus ?? (e.technicianId != null ? 'en_proceso' : 'asignado'),
       workshopId: e.workshopId,
       technicianId: e.technicianId,
       lastUpdatedAt: e.acceptedAt,
@@ -248,6 +255,21 @@ class IncidentRealtimeNotifier
   }
 
   void _onAssignmentRejected(IncidentAssignmentRejectedEvent e) {
+    if (e.assignmentMode == 'manual') {
+      _patch(
+        e.incidentId,
+        status: 'pendiente',
+        workshopId: null,
+        technicianId: null,
+        reason: 'El taller rechazó la solicitud. Puedes elegir otro.',
+        lastUpdatedAt: e.rejectedAt,
+      );
+      debugPrint(
+        '[IncidentRealtimeNotifier] manual assignment_rejected: id=${e.incidentId}',
+      );
+      return;
+    }
+
     _patch(
       e.incidentId,
       status: 'assignment_rejected',
@@ -302,7 +324,7 @@ class IncidentRealtimeNotifier
   void _onReassigned(IncidentReassignedEvent e) {
     _patch(
       e.incidentId,
-      status: 'reassigned',
+      status: e.newStatus ?? 'pendiente',
       workshopId: e.newWorkshopId,
       technicianId: e.newTechnicianId,
       reason: e.reason,
@@ -358,11 +380,11 @@ class IncidentRealtimeNotifier
   void _patch(
     int incidentId, {
     String? status,
-    int? technicianId,
-    int? workshopId,
-    int? estimatedArrivalMinutes,
-    String? reason,
-    String? lastUpdatedAt,
+    Object? technicianId = _sentinel,
+    Object? workshopId = _sentinel,
+    Object? estimatedArrivalMinutes = _sentinel,
+    Object? reason = _sentinel,
+    Object? lastUpdatedAt = _sentinel,
   }) {
     final existing =
         state[incidentId] ??
@@ -395,6 +417,8 @@ class IncidentRealtimeNotifier
     super.dispose();
   }
 }
+
+const Object _sentinel = Object();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Providers

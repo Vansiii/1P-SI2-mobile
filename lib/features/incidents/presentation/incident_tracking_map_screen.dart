@@ -5,11 +5,13 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:merchanic_repair/core/config/api_config.dart';
+import 'package:merchanic_repair/core/services/data_cache.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/data/models/incident.dart';
 import 'package:merchanic_repair/services/api_service.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
 import 'package:merchanic_repair/features/chat/presentation/chat_screen.dart';
+import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import 'package:merchanic_repair/widgets/map/smart_map_marker.dart';
 import 'package:merchanic_repair/widgets/map/map_compass_button.dart';
 
@@ -42,6 +44,13 @@ class _IncidentTrackingMapScreenState
   StreamSubscription? _wsSubscription;
   double? _distanceKm;
   int? _etaMinutes;
+  List<LatLng>? _routePoints;
+  double? _heading;
+  double? _technicianSpeed;
+  DateTime? _lastRouteCalcTime;
+  LatLng? _lastRouteCalcPosition;
+  static const double _routeRecalcThresholdMeters = 200;
+  static const Duration _routeRecalcThresholdTime = Duration(seconds: 30);
 
   static const LatLng _defaultCenter = LatLng(-17.3935, -66.1570);
 
@@ -68,48 +77,11 @@ class _IncidentTrackingMapScreenState
 
       final data = response['data'] as Map<String, dynamic>?;
       if (data == null) return;
+      await _cacheTrackingData(data);
 
-      final incident = Incident.fromJson(data);
-
-      LatLng? clientLoc;
-      LatLng? workshopLoc;
-      LatLng? technicianLoc;
-
-      if (incident.latitude != null && incident.longitude != null) {
-        clientLoc = LatLng(incident.latitude!, incident.longitude!);
-      }
-
-      final workshop =
-          data['workshop'] as Map<String, dynamic>? ?? incident.taller;
-      if (workshop != null) {
-        final lat = (workshop['latitude'] as num?)?.toDouble();
-        final lng = (workshop['longitude'] as num?)?.toDouble();
-        if (lat != null && lng != null) workshopLoc = LatLng(lat, lng);
-      }
-
-      final technician =
-          data['technician'] as Map<String, dynamic>? ?? incident.tecnico;
-      if (technician != null) {
-        final lat = (technician['current_latitude'] as num?)?.toDouble();
-        final lng = (technician['current_longitude'] as num?)?.toDouble();
-        if (lat != null && lng != null) technicianLoc = LatLng(lat, lng);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _incident = incident;
-        _clientLocation = clientLoc;
-        _workshopLocation = workshopLoc;
-        _technicianLocation = technicianLoc;
-        _isLoadingData = false;
-      });
-
-      _calculateDistance();
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _mapReady) _centerMapOnLocations();
-      });
+      _applyIncidentSnapshot(data);
     } catch (e) {
+      if (_tryLoadFromCache()) return;
       if (mounted) {
         setState(() => _isLoadingData = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +95,93 @@ class _IncidentTrackingMapScreenState
         );
       }
     }
+  }
+
+  Future<void> _cacheTrackingData(Map<String, dynamic> data) async {
+    final userId = DataCache.currentUserId;
+    if (userId == null) {
+      await DataCache.put('tracking_incident_${widget.incidentId}', data);
+    } else {
+      await DataCache.putScopedWithTtl(
+        'tracking_incident_${widget.incidentId}', userId, data,
+        ttl: const Duration(minutes: 30),
+      );
+    }
+  }
+
+  bool _tryLoadFromCache() {
+    final userId = DataCache.currentUserId;
+    Map<String, dynamic>? data;
+
+    if (userId != null) {
+      final cached = DataCache.getScoped(
+        'tracking_incident_${widget.incidentId}', userId,
+      );
+      if (cached is Map) data = Map<String, dynamic>.from(cached);
+    }
+    data ??= DataCache.get('tracking_incident_${widget.incidentId}') as Map<String, dynamic>?;
+
+    if (data != null) {
+      _applyIncidentSnapshot(data);
+      _loadCachedLocation();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sin conexion. Mostrando ultima ubicacion guardada.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
+  void _applyIncidentSnapshot(Map<String, dynamic> data) {
+    final incident = Incident.fromJson(data);
+
+    LatLng? clientLoc;
+    LatLng? workshopLoc;
+    LatLng? technicianLoc;
+
+    if (incident.latitude != null && incident.longitude != null) {
+      clientLoc = LatLng(incident.latitude!, incident.longitude!);
+    }
+
+    final workshop = data['workshop'] as Map<String, dynamic>? ?? incident.taller;
+    if (workshop != null) {
+      final lat = (workshop['latitude'] as num?)?.toDouble();
+      final lng = (workshop['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        workshopLoc = LatLng(lat, lng);
+      }
+    }
+
+    final technician =
+        data['technician'] as Map<String, dynamic>? ?? incident.tecnico;
+    if (technician != null) {
+      final lat = (technician['current_latitude'] as num?)?.toDouble();
+      final lng = (technician['current_longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        technicianLoc = LatLng(lat, lng);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _incident = incident;
+      _clientLocation = clientLoc;
+      _workshopLocation = workshopLoc;
+      _technicianLocation = technicianLoc;
+      _isLoadingData = false;
+    });
+
+    _calculateDistance();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _mapReady) {
+        _centerMapOnLocations();
+      }
+    });
   }
 
   void _centerMapOnLocations() {
@@ -168,14 +227,27 @@ class _IncidentTrackingMapScreenState
 
       if (message['type'] == 'location_update' &&
           message['incident_id'] == widget.incidentId) {
-        final location = message['location'] as Map<String, dynamic>?;
-        final lat = (location?['latitude'] as num?)?.toDouble();
-        final lng = (location?['longitude'] as num?)?.toDouble();
+        debugPrint('[_ws] location_update recibido: ${message.keys}');
+        // Handle multiple WS message formats
+        final loc = message['location'] as Map<String, dynamic>?;
+        final dta = message['data'] as Map<String, dynamic>?;
+        final lat = (loc?['latitude'] ?? dta?['latitude'] ?? message['latitude']) as num?;
+        final lng = (loc?['longitude'] ?? dta?['longitude'] ?? message['longitude']) as num?;
+        final hdg = (loc?['heading'] ?? dta?['heading'] ?? message['heading']) as num?;
+        final spd = (loc?['speed'] ?? dta?['speed'] ?? message['speed']) as num?;
+        
         if (lat != null && lng != null) {
+          final newPos = LatLng(lat.toDouble(), lng.toDouble());
+          debugPrint('[_ws] Actualizando posición técnico → $newPos');
           setState(() {
-            _technicianLocation = LatLng(lat, lng);
-            _calculateDistance();
+            _technicianLocation = newPos;
+            if (hdg != null) _heading = hdg.toDouble();
+            if (spd != null) _technicianSpeed = spd.toDouble();
           });
+          _recalculateRouteIfNeeded(newPos);
+          _cacheLiveLocation(lat.toDouble(), lng.toDouble());
+        } else {
+          debugPrint('[_ws] location_update sin lat/lng. Keys: ${message.keys}');
         }
       } else if (message['type'] == 'incident_status_change' &&
           message['incident_id'] == widget.incidentId) {
@@ -195,20 +267,142 @@ class _IncidentTrackingMapScreenState
     );
   }
 
+  void _cacheLiveLocation(double lat, double lng) {
+    final userId = DataCache.currentUserId;
+    if (userId == null) return;
+    DataCache.putScopedWithTtl(
+      'tracking_location_${widget.incidentId}', userId,
+      {'latitude': lat, 'longitude': lng},
+      ttl: const Duration(hours: 1),
+    );
+  }
+
+  void _loadCachedLocation() {
+    final userId = DataCache.currentUserId;
+    if (userId == null) return;
+    final cached = DataCache.getScoped(
+      'tracking_location_${widget.incidentId}', userId,
+    );
+    if (cached is Map) {
+      final lat = (cached['latitude'] as num?)?.toDouble();
+      final lng = (cached['longitude'] as num?)?.toDouble();
+      if (lat != null && lng != null && _technicianLocation == null) {
+        setState(() {
+          _technicianLocation = LatLng(lat, lng);
+          _calculateDistance();
+        });
+      }
+    }
+  }
+
   void _calculateDistance() {
     if (_clientLocation != null && _technicianLocation != null) {
-      const distance = Distance();
-      final meters = distance.as(
-        LengthUnit.Meter,
-        _clientLocation!,
-        _technicianLocation!,
-      );
-      _distanceKm = meters / 1000;
-      _etaMinutes = ((_distanceKm! / 30) * 60).round();
+      _loadOSRMRoute(_technicianLocation!, _clientLocation!);
     } else {
       _distanceKm = null;
       _etaMinutes = null;
     }
+  }
+
+  Future<void> _loadOSRMRoute(LatLng from, LatLng to) async {
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      debugPrint('[_loadOSRMRoute] Llamando OSRM: $from → $to');
+      final route = await apiService.calculateRoute(
+        originLat: from.latitude,
+        originLng: from.longitude,
+        destLat: to.latitude,
+        destLng: to.longitude,
+      );
+
+      if (!mounted) return;
+
+      debugPrint('[_loadOSRMRoute] Respuesta: dist=${route['distance_km']}, dur=${route['duration_minutes']}, hasGeometry=${route['geometry'] != null}');
+      
+      final geometry = route['geometry'] as Map<String, dynamic>?;
+      final distanceKm = (route['distance_km'] as num?)?.toDouble();
+      final durationMin = (route['duration_minutes'] as num?)?.toDouble();
+
+      final parsed = geometry != null ? _parseOSRMGeometry(geometry) : null;
+      debugPrint('[_loadOSRMRoute] Puntos parseados: ${parsed?.length ?? 0}');
+
+      setState(() {
+        if (distanceKm != null) _distanceKm = distanceKm;
+        if (durationMin != null) {
+          _etaMinutes = _adjustETA(durationMin).round();
+        }
+        if (parsed != null && parsed.isNotEmpty) {
+          _routePoints = parsed;
+        } else if (geometry == null) {
+          _routePoints = null;
+        }
+        _lastRouteCalcTime = DateTime.now();
+        _lastRouteCalcPosition = from;
+      });
+    } catch (e) {
+      debugPrint('[_loadOSRMRoute] Error: $e');
+      if (mounted) {
+        const distance = Distance();
+        final meters = distance.as(LengthUnit.Meter, from, to);
+        setState(() {
+          _distanceKm = meters / 1000;
+          _etaMinutes = _adjustETA((_distanceKm! / 40) * 60).round();
+          _routePoints = null;
+        });
+      }
+    }
+  }
+
+  void _recalculateRouteIfNeeded(LatLng newPos) {
+    if (_clientLocation == null) return;
+
+    final now = DateTime.now();
+    if (_lastRouteCalcTime != null &&
+        now.difference(_lastRouteCalcTime!) < _routeRecalcThresholdTime) {
+      if (_lastRouteCalcPosition != null) {
+        const distance = Distance();
+        final meters = distance.as(
+          LengthUnit.Meter, _lastRouteCalcPosition!, newPos,
+        );
+        if (meters < _routeRecalcThresholdMeters) return;
+      }
+    }
+    _loadOSRMRoute(newPos, _clientLocation!);
+  }
+
+  static const double _trafficBuffer = 1.25;
+  static const double _rushHourBuffer = 1.50;
+
+  double _adjustETA(double baseMinutes) {
+    final spd = _technicianSpeed;
+    final isRealSpeed = spd != null && spd >= 5 && spd <= 120;
+    
+    if (isRealSpeed) {
+      return (_distanceKm! / spd) * 60 * 1.05; // +5% margin
+    }
+    
+    double adjusted = baseMinutes * _trafficBuffer;
+    
+    final hour = DateTime.now().hour;
+    if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) {
+      adjusted *= _rushHourBuffer;
+    }
+    
+    return adjusted;
+  }
+
+  List<LatLng> _parseOSRMGeometry(Map<String, dynamic> geometry) {
+    // OSRM returns GeoJSON: {"type": "LineString", "coordinates": [[lng, lat], ...]}
+    final coords = geometry['coordinates'] as List<dynamic>?;
+    if (coords == null) return <LatLng>[];
+
+    return coords.map((c) {
+      final l = c as List<dynamic>;
+      return LatLng(
+        (l[1] as num).toDouble(),
+        (l[0] as num).toDouble(),
+      );
+    }).toList();
   }
 
   String _getTechnicianName() {
@@ -273,20 +467,22 @@ class _IncidentTrackingMapScreenState
               },
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.mecanicoYa.app',
-              ),
+              const CachedOsmTileLayer(),
               if (_technicianLocation != null && _clientLocation != null)
                 PolylineLayer(
                   polylines: [
                     Polyline(
-                      points: [_technicianLocation!, _clientLocation!],
-                      strokeWidth: 4.0,
-                      color: AppColors.primary.withValues(alpha: 0.7),
+                      points: _routePoints ??
+                          [_technicianLocation!, _clientLocation!],
+                      strokeWidth: _routePoints != null ? 4.0 : 3.0,
+                      color: _routePoints != null
+                          ? AppColors.primary.withValues(alpha: 0.7)
+                          : Colors.orange.withValues(alpha: 0.8),
                       borderStrokeWidth: 2.0,
                       borderColor: Colors.white,
-                      pattern: StrokePattern.dotted(),
+                      pattern: _routePoints != null
+                          ? StrokePattern.solid()
+                          : StrokePattern.dashed(segments: const [12, 8]),
                     ),
                   ],
                 ),
@@ -357,9 +553,9 @@ class _IncidentTrackingMapScreenState
       markers.add(
         Marker(
           point: _clientLocation!,
-          width: 50,
-          height: 65,
-          alignment: Alignment.bottomCenter,
+          width: SmartMapMarker.markerWidth,
+          height: SmartMapMarker.markerHeight,
+          alignment: Alignment.topCenter,
           child: SmartMapMarker(
             role: MarkerRole.client,
             label: 'Cliente',
@@ -373,9 +569,9 @@ class _IncidentTrackingMapScreenState
       markers.add(
         Marker(
           point: _workshopLocation!,
-          width: 50,
-          height: 65,
-          alignment: Alignment.bottomCenter,
+          width: SmartMapMarker.markerWidth,
+          height: SmartMapMarker.markerHeight,
+          alignment: Alignment.topCenter,
           child: SmartMapMarker(
             role: MarkerRole.workshop,
             label: 'Taller',
@@ -389,12 +585,13 @@ class _IncidentTrackingMapScreenState
       markers.add(
         Marker(
           point: _technicianLocation!,
-          width: 50,
-          height: 65,
-          alignment: Alignment.bottomCenter,
+          width: SmartMapMarker.markerWidth,
+          height: SmartMapMarker.markerHeight,
+          alignment: Alignment.topCenter,
           child: SmartMapMarker(
             role: MarkerRole.technician,
             label: _getTechnicianName().split(' ').first,
+            heading: _heading,
             onTap: () => _showMarkerDetails(MarkerRole.technician),
           ),
         ),

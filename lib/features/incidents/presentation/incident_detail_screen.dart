@@ -7,11 +7,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:go_router/go_router.dart';
+import '../../../widgets/map/cached_osm_tile_layer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../payments/presentation/payment_screen.dart';
 import '../../payments/providers/payment_provider.dart';
 import '../../../widgets/rating_modal.dart';
-import '../../../data/services/storage_service.dart';
+import '../../../shared/widgets/offline_aware_image.dart';
+import '../../../core/services/sync_auto_update_provider.dart';
+import '../../auth/providers/auth_provider.dart';
 import '../providers/incident_provider.dart';
 import '../providers/incident_realtime_provider.dart';
 import '../providers/incidents_websocket_provider.dart';
@@ -155,6 +158,13 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
     final rt = ref.watch(incidentRealtimeStateProvider(widget.incidentId));
     _realtimeState = rt;
 
+    // React to sync completion: reload AI analysis data when sync finishes
+    ref.listen<DateTime?>(hasSyncUpdatesProvider, (previous, next) {
+      if (next != null && _incident != null) {
+        _loadAiAnalysisData();
+      }
+    });
+
     // Real-time: react to status changes from WebSocket
     ref.listen<IncidentRealtimeState?>(
       incidentRealtimeStateProvider(widget.incidentId),
@@ -183,7 +193,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
       },
     );
 
-    // Real-time: auto-reload detail when WebSocket provider updates this incident
+    // Real-time: actualizar solo los campos cambiados sin recargar detalle
     ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
       previous,
       next,
@@ -195,19 +205,24 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
       final nextIncident = next
           .where((i) => i.id == widget.incidentId)
           .firstOrNull;
-      if (prevIncident == null && nextIncident != null) {
-        _loadIncidentDetail();
-      }
-      if (prevIncident != null && nextIncident != null) {
-        final needsRefresh =
-            prevIncident.estadoActual != nextIncident.estadoActual ||
-            prevIncident.tallerId != nextIncident.tallerId ||
-            prevIncident.tecnicoId != nextIncident.tecnicoId ||
-            prevIncident.prioridadIa != nextIncident.prioridadIa ||
-            prevIncident.categoriaIa != nextIncident.categoriaIa;
-        if (needsRefresh) {
-          _loadIncidentDetail();
-        }
+      if (nextIncident == null) return;
+      if (prevIncident == null || prevIncident != nextIncident) {
+        setState(() {
+          _incident = _incident!.copyWith(
+            tallerId: nextIncident.tallerId,
+            tecnicoId: nextIncident.tecnicoId,
+            estadoActual: nextIncident.estadoActual,
+            categoriaIa: nextIncident.categoriaIa,
+            prioridadIa: nextIncident.prioridadIa,
+            resumenIa: nextIncident.resumenIa,
+            direccionReferencia: nextIncident.direccionReferencia,
+            latitude: nextIncident.latitude,
+            longitude: nextIncident.longitude,
+            assignedAt: nextIncident.assignedAt,
+            resolvedAt: nextIncident.resolvedAt,
+            updatedAt: nextIncident.updatedAt,
+          );
+        });
       }
     });
 
@@ -545,24 +560,9 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                                 border: Border.all(color: AppColors.border),
                               ),
                               clipBehavior: Clip.antiAlias,
-                              child: Image.network(
-                                imagen.fileUrl,
+                              child: OfflineAwareImage(
+                                imageUrl: imagen.fileUrl,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Center(
-                                    child: Icon(
-                                      Icons.broken_image,
-                                      color: AppColors.textMuted,
-                                    ),
-                                  );
-                                },
-                                loadingBuilder:
-                                    (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
-                                      return const Center(
-                                        child: CircularProgressIndicator(),
-                                      );
-                                    },
                               ),
                             ),
                           );
@@ -711,11 +711,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                               initialZoom: 15,
                             ),
                             children: [
-                              TileLayer(
-                                urlTemplate:
-                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                                userAgentPackageName: 'com.example.mobile',
-                              ),
+                              const CachedOsmTileLayer(),
                               MarkerLayer(
                                 markers: [
                                   Marker(
@@ -725,6 +721,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                                     ),
                                     width: 50,
                                     height: 50,
+                                    alignment: Alignment.topCenter,
                                     child: const Icon(
                                       Icons.location_on,
                                       color: AppColors.error,
@@ -860,10 +857,13 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          context.push(
-                            '/incidents/${incident.id}/select-workshop',
+                        onPressed: () async {
+                          final didSelect = await context.push<bool>(
+                            '/incidents/${incident.id}/select-workshop?origin=detail',
                           );
+                          if (didSelect == true) {
+                            _loadIncidentDetail();
+                          }
                         },
                         icon: const Icon(Icons.build_circle, size: 22),
                         label: Text(
@@ -1449,31 +1449,9 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 4.0,
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Center(
-                      child: Icon(
-                        Icons.broken_image,
-                        size: 60,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                  loadingProgress.expectedTotalBytes!
-                            : null,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
-                ),
+                child: OfflineAwareImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.contain),
               ),
             ),
             Positioned(
@@ -1501,7 +1479,11 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
         if (_playingAudioIndex != index) {
           await _audioPlayer.stop();
         }
-        await _audioPlayer.play(UrlSource(audioUrl));
+        await _audioPlayer.play(
+          audioUrl.startsWith('local://')
+              ? DeviceFileSource(audioUrl.substring(8))
+              : UrlSource(audioUrl),
+        );
         setState(() {
           _playingAudioIndex = index;
           _isPlaying = true;
@@ -1690,8 +1672,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
   }
 
   void _showRatingModal(BuildContext context, int incidentId) async {
-    final storageService = StorageService();
-    final token = await storageService.getAccessToken() ?? '';
+    final apiService = ref.read(apiServiceProvider);
 
     if (!mounted) return;
 
@@ -1703,7 +1684,7 @@ class _IncidentDetailScreenState extends ConsumerState<IncidentDetailScreen> {
       ),
       builder: (ctx) => RatingModal(
         incidentId: incidentId,
-        token: token,
+        apiService: apiService,
         onRatingSubmitted: () {
           Navigator.pop(ctx);
           ScaffoldMessenger.of(context).showSnackBar(

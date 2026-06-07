@@ -1,8 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_drawer.dart';
+import '../../../shared/widgets/offline_aware_image.dart';
 import '../providers/vehicle_provider.dart';
 
 class VehiclesListScreen extends ConsumerWidget {
@@ -42,7 +44,7 @@ class VehiclesListScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.textMain),
               onPressed: () {
-                ref.read(vehiclesProvider.notifier).loadVehicles();
+                ref.read(vehiclesProvider.notifier).refreshVehicles();
               },
               tooltip: 'Recargar vehículos',
             ),
@@ -82,7 +84,7 @@ class VehiclesListScreen extends ConsumerWidget {
 
             return RefreshIndicator(
               onRefresh: () =>
-                  ref.read(vehiclesProvider.notifier).loadVehicles(),
+                  ref.read(vehiclesProvider.notifier).refreshVehicles(),
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: vehicles.length,
@@ -116,38 +118,14 @@ class VehiclesListScreen extends ConsumerWidget {
                                       vehicle.imagen!.isNotEmpty
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        vehicle.imagen!,
+                                      child: OfflineAwareImage(
+                                        imageUrl: vehicle.imagen!,
                                         fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                              print(
-                                                '❌ Error cargando imagen: $error',
-                                              );
-                                              print(
-                                                '   URL: ${vehicle.imagen}',
-                                              );
-                                              return const Icon(
-                                                Icons.directions_car,
-                                                color: AppColors.primary,
-                                                size: 40,
-                                              );
-                                            },
-                                        loadingBuilder:
-                                            (context, child, loadingProgress) {
-                                              if (loadingProgress == null) {
-                                                print(
-                                                  '✅ Imagen cargada: ${vehicle.imagen}',
-                                                );
-                                                return child;
-                                              }
-                                              return const Center(
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              );
-                                            },
+                                        errorWidget: const Icon(
+                                          Icons.directions_car,
+                                          color: AppColors.primary,
+                                          size: 40,
+                                        ),
                                       ),
                                     )
                                   : const Icon(
@@ -229,7 +207,7 @@ class VehiclesListScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: () =>
-                      ref.read(vehiclesProvider.notifier).loadVehicles(),
+                      ref.read(vehiclesProvider.notifier).refreshVehicles(),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reintentar'),
                   style: ElevatedButton.styleFrom(

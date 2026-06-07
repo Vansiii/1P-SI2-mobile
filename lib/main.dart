@@ -7,11 +7,16 @@ import 'core/theme/app_theme.dart';
 import 'core/config/app_constants.dart';
 import 'core/config/environment.dart';
 import 'core/router/app_router.dart';
+import 'core/services/data_cache.dart';
+import 'core/services/sync_auto_update_provider.dart';
+import 'core/widgets/offline_banner.dart';
 import 'shared/utils/snackbar_utils.dart';
 import 'data/services/api_service.dart';
 import 'features/auth/providers/auth_provider.dart';
+import 'features/auth/providers/push_token_provider.dart';
 import 'services/push_notification_service.dart';
 import 'services/notification_handler.dart';
+import 'data/db/app_database.dart';
 import 'features/chat/services/chat_cache.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -50,12 +55,27 @@ Future<void> main() async {
   // Inicializar cache de chat con Hive
   try {
     await ChatCache.init();
+    await DataCache.init();
     if (kDebugMode) {
       print('✅ Chat cache initialized');
+      print('✅ Data cache initialized');
     }
   } catch (e) {
     if (kDebugMode) {
-      print('❌ Error initializing chat cache: $e');
+      print('❌ Error initializing caches: $e');
+    }
+  }
+
+  // Inicializar Drift SQLite (cola offline robusta)
+  try {
+    final db = AppDatabase();
+    await db.offlineQueueDao.getPendingCount();
+    if (kDebugMode) {
+      print('✅ SQLite offline database (Drift) initialized');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('❌ Error initializing SQLite database: $e');
     }
   }
 
@@ -109,10 +129,12 @@ class MerchanicRepairApp extends ConsumerStatefulWidget {
   ConsumerState<MerchanicRepairApp> createState() => _MerchanicRepairAppState();
 }
 
-class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
+class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // Configurar callback para manejar sesión expirada
     ApiService.onSessionExpired = () {
@@ -127,10 +149,50 @@ class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
         NotificationHandler.handleNotification(message, router);
       }
     });
+
+    ref.listenManual(authProvider, (_, next) {
+      if (next.isAuthenticated && next.user != null) {
+        _ensurePushRegistration();
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authState = ref.read(authProvider);
+      if (authState.isAuthenticated && authState.user != null) {
+        _ensurePushRegistration();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final authState = ref.read(authProvider);
+      if (authState.isAuthenticated && authState.user != null) {
+        _ensurePushRegistration();
+      }
+    }
+  }
+
+  Future<void> _ensurePushRegistration() async {
+    try {
+      await ref.read(pushTokenManagerProvider).registerTokenAfterLogin();
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error ensuring push token registration: $e');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(syncAutoUpdateProvider);
     final router = ref.watch(goRouterProvider);
 
     return MaterialApp.router(
@@ -146,6 +208,14 @@ class _MerchanicRepairAppState extends ConsumerState<MerchanicRepairApp> {
       ],
       supportedLocales: const [Locale('es', 'ES'), Locale('en', 'US')],
       locale: const Locale('es', 'ES'),
+      builder: (context, child) {
+        return Column(
+          children: [
+            const OfflineBanner(),
+            Expanded(child: child!),
+          ],
+        );
+      },
     );
   }
 }

@@ -137,7 +137,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentAssignedEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'assigned',
+        status: 'pendiente',
         description: '',
         workshopId: event.workshopId,
         technicianId: event.technicianId,
@@ -174,7 +174,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentTechnicianOnWayEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'technician_on_way',
+        status: 'en_camino',
         description: '',
         technicianId: event.technicianId,
         estimatedArrivalMinutes: event.estimatedArrivalMinutes,
@@ -184,7 +184,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentTechnicianArrivedEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'technician_arrived',
+        status: 'en_proceso',
         description: '',
         technicianId: event.technicianId,
         updatedAt: event.arrivedAt,
@@ -193,7 +193,7 @@ IncidentSummaryUI? incidentEventToUI(RealTimeEvent event) {
     case IncidentAssignmentAcceptedEvent():
       return IncidentSummaryUI(
         incidentId: event.incidentId,
-        status: 'assignment_accepted',
+        status: event.newStatus ?? (event.technicianId != null ? 'en_proceso' : 'asignado'),
         description: '',
         workshopId: event.workshopId,
         technicianId: event.technicianId,

@@ -9,6 +9,7 @@ import 'package:merchanic_repair/data/models/message_status.dart';
 import 'package:merchanic_repair/data/models/cancellation_request.dart';
 import 'package:merchanic_repair/services/api_service.dart';
 import 'package:merchanic_repair/services/websocket_service.dart';
+import 'package:merchanic_repair/features/auth/providers/auth_provider.dart' show authProvider;
 import 'package:merchanic_repair/features/chat/services/chat_realtime_service.dart';
 import 'package:merchanic_repair/features/chat/services/chat_cache.dart';
 import 'package:merchanic_repair/features/chat/providers/chat_realtime_provider.dart';
@@ -31,6 +32,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   bool _isLoading = true;
   StreamSubscription? _wsSubscription;
+  int? _activeConversationId;
 
   // Usuario actual
   int? _currentUserId;
@@ -160,14 +162,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _syncAfterReconnection() async {
     try {
       // Obtener el ID del último mensaje conocido
-      final lastMessageId = _messages.isNotEmpty ? _messages.last.id : null;
+      await _refreshActiveConversation();
+      if (_activeConversationId == null) {
+        return;
+      }
 
       final api = ref.read(apiServiceProvider);
       final response = await api.getRaw(
         '${ApiConfig.chat}/incidents/${widget.incidentId}/messages',
-        queryParameters: lastMessageId != null
-            ? {'since_id': lastMessageId}
-            : null,
       );
 
       List<dynamic> data;
@@ -180,21 +182,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
 
       if (data.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _messages.clear();
+          });
+        } else {
+          _messages.clear();
+        }
+        await ChatCache.saveMessages(widget.incidentId, <Message>[]);
+        return;
+      }
+
+      if (data.isEmpty) {
         debugPrint('[ChatScreen] ✅ Sin mensajes nuevos tras reconexión');
         return;
       }
 
-      final newMessages = data.map((j) => Message.fromJson(j)).toList();
+      final newMessages = data
+          .map((j) => Message.fromJson(j))
+          .where((message) => message.conversationId == _activeConversationId)
+          .toList();
 
       if (mounted) {
         setState(() {
           // Agregar solo mensajes que no existen
-          for (final msg in newMessages) {
-            final exists = _messages.any((m) => m.id == msg.id);
-            if (!exists) {
-              _messages.add(msg);
-            }
-          }
+          _messages
+            ..clear()
+            ..addAll(newMessages);
 
           // Reordenar
           _messages.sort(
@@ -222,6 +236,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Sincronizar con backend (usado por pull-to-refresh) (Task 4.3)
   Future<void> _syncWithBackend() async {
     try {
+      await _refreshActiveConversation();
+      if (_activeConversationId == null) {
+        return;
+      }
+
       final api = ref.read(apiServiceProvider);
       final response = await api.getRaw(
         '${ApiConfig.chat}/incidents/${widget.incidentId}/messages',
@@ -236,7 +255,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         data = [];
       }
 
-      final serverMessages = data.map((j) => Message.fromJson(j)).toList();
+      final serverMessages = data
+          .map((j) => Message.fromJson(j))
+          .where((message) => message.conversationId == _activeConversationId)
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -267,6 +289,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ─── Carga de datos ───────────────────────────────────────────────────────
 
   Future<void> _getCurrentUser() async {
+    final authState = ref.read(authProvider);
+    if (authState.user != null) {
+      _currentUserId = authState.user!.id;
+      _currentUserRole = authState.user!.userType;
+      return;
+    }
     try {
       final api = ref.read(apiServiceProvider);
       final response = await api.get('${ApiConfig.auth}/me');
@@ -299,18 +327,95 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<int?> _fetchActiveConversationId() async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final response = await api.getRaw(
+        '${ApiConfig.chat}/incidents/${widget.incidentId}/conversation',
+      );
+      final body = response.data;
+      final data =
+          body is Map<String, dynamic> && body['data'] is Map<String, dynamic>
+          ? body['data'] as Map<String, dynamic>
+          : (body is Map<String, dynamic> ? body : <String, dynamic>{});
+      return (data['id'] as num?)?.toInt();
+    } catch (e) {
+      final cachedConversationId = await ChatCache.getConversationId(
+        widget.incidentId,
+      );
+      if (cachedConversationId != null && cachedConversationId > 0) {
+        debugPrint(
+          '[ChatScreen] Using cached conversation $cachedConversationId for incident ${widget.incidentId}',
+        );
+        return cachedConversationId;
+      }
+      if (_activeConversationId != null && _activeConversationId! > 0) {
+        return _activeConversationId;
+      }
+      debugPrint(
+        '[ChatScreen] No active conversation for incident ${widget.incidentId}: $e',
+      );
+      return null;
+    }
+  }
+
+  Future<void> _clearCurrentConversation({
+    bool keepConversationId = false,
+    bool clearPersistentCache = true,
+  }) async {
+    if (!keepConversationId) {
+      _activeConversationId = null;
+    }
+    if (mounted) {
+      setState(() {
+        _messages.clear();
+      });
+    } else {
+      _messages.clear();
+    }
+    if (clearPersistentCache) {
+      await ChatCache.clearIncident(widget.incidentId);
+    }
+  }
+
+  Future<void> _applyConversationId(int conversationId) async {
+    if (_activeConversationId == conversationId) return;
+    _activeConversationId = conversationId;
+    await _clearCurrentConversation(
+      keepConversationId: true,
+      clearPersistentCache: false,
+    );
+  }
+
+  Future<void> _refreshActiveConversation() async {
+    final conversationId = await _fetchActiveConversationId();
+    if (conversationId == null) {
+      await _clearCurrentConversation();
+      return;
+    }
+    await _applyConversationId(conversationId);
+  }
+
   Future<void> _loadMessages() async {
+    final activeConversationId = await _fetchActiveConversationId();
+    if (activeConversationId == null) {
+      await _clearCurrentConversation();
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      return;
+    }
+
+    await _applyConversationId(activeConversationId);
+
     // 1. Cargar desde cache INMEDIATAMENTE (sin loader)
-    final cachedMessages = await ChatCache.getMessages(widget.incidentId);
+    final cachedMessages = (await ChatCache.getMessages(widget.incidentId))
+        .where((message) => message.conversationId == _activeConversationId)
+        .toList();
     if (cachedMessages.isNotEmpty && mounted) {
       setState(() {
         _messages.clear();
-        _messages.addAll(cachedMessages);
-        _messages.sort(
-          (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
-            b.createdAt ?? DateTime.now(),
-          ),
-        );
+        _messages.addAll(_dedupeMessages(cachedMessages));
       });
       _scrollToBottom();
     }
@@ -336,17 +441,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         data = [];
       }
 
-      final serverMessages = data.map((j) => Message.fromJson(j)).toList();
+      final serverMessages = _dedupeMessages(
+        data
+            .map((j) => Message.fromJson(j))
+            .where((message) => message.conversationId == _activeConversationId)
+            .toList(),
+      );
 
       if (mounted) {
         setState(() {
           _messages.clear();
           _messages.addAll(serverMessages);
-          _messages.sort(
-            (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
-              b.createdAt ?? DateTime.now(),
-            ),
-          );
         });
         _scrollToBottom(force: true); // Forzar scroll al cargar inicial
 
@@ -415,6 +520,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (incoming != null) {
           _upsertIncomingMessage(incoming);
         }
+      } else if (type == 'incident.assignment_accepted' ||
+          type == 'assignment_accepted') {
+        final data = (message['data'] is Map<String, dynamic>)
+            ? message['data'] as Map<String, dynamic>
+            : ((message['payload'] is Map<String, dynamic>)
+                ? message['payload'] as Map<String, dynamic>
+                : message);
+        final conversationId = (data['conversation_id'] as num?)?.toInt();
+        if (conversationId != null) {
+          unawaited(_applyConversationId(conversationId));
+        }
       } else if (type == 'chat.message_read' || type == 'message_read') {
         _handleMessageStatusEvent(message, isRead: true);
       } else if (type == 'chat.message_delivered' ||
@@ -475,6 +591,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (!mounted || _redirectingAfterCancellation) return;
     _redirectingAfterCancellation = true;
 
+    await _clearCurrentConversation();
     setState(() => _pendingCancellation = null);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -519,27 +636,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
 
       final payload = message['payload'];
-      if (payload is Map<String, dynamic>) {
-        final messageId = (payload['message_id'] as num?)?.toInt();
-        final incidentId = (payload['incident_id'] as num?)?.toInt();
-        final senderId = (payload['sender_id'] as num?)?.toInt();
+      final data = message['data'];
+      final source = payload is Map<String, dynamic>
+          ? payload
+          : (data is Map<String, dynamic> ? data : null);
+      if (source != null) {
+        final messageId = (source['message_id'] as num?)?.toInt();
+        final conversationId = (source['conversation_id'] as num?)?.toInt();
+        final incidentId = (source['incident_id'] as num?)?.toInt();
+        final senderId = (source['sender_id'] as num?)?.toInt();
         if (messageId == null || incidentId == null || senderId == null) {
           return null;
         }
 
         return Message.fromJson({
           'id': messageId,
+          'conversation_id': conversationId ?? _activeConversationId ?? 0,
           'incident_id': incidentId,
           'sender_id': senderId,
-          'sender_name': payload['sender_name'],
-          'sender_role': payload['sender_role'],
-          'message': payload['content'] ?? '',
-          'message_type': payload['message_type'] ?? 'text',
+          'sender_name': source['sender_name'],
+          'sender_role': source['sender_role'],
+          'message': source['content'] ?? source['message'] ?? '',
+          'message_type': source['message_type'] ?? 'text',
           'created_at': _normalizeServerTimestamp(
-            payload['sent_at'] ?? message['timestamp'],
+            source['sent_at'] ?? message['timestamp'],
           ),
           'sent_at': _normalizeServerTimestamp(
-            payload['sent_at'] ?? message['timestamp'],
+            source['sent_at'] ?? message['timestamp'],
           ),
           'is_read': false,
         });
@@ -551,27 +674,175 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _upsertIncomingMessage(Message newMessage) {
+    if (newMessage.conversationId > 0 &&
+        _activeConversationId != null &&
+        newMessage.conversationId != _activeConversationId) {
+      _activeConversationId = newMessage.conversationId;
+      _messages.clear();
+      unawaited(ChatCache.clearIncident(widget.incidentId));
+    }
+    if (newMessage.conversationId > 0 && _activeConversationId == null) {
+      _activeConversationId = newMessage.conversationId;
+    }
+
     setState(() {
       final messageId = newMessage.id;
       final existingIndex = messageId == null
           ? -1
           : _messages.indexWhere((m) => m.id == messageId);
+      final optimisticIndex = existingIndex == -1
+          ? _findMatchingOptimisticMessageIndex(newMessage)
+          : -1;
 
       if (existingIndex != -1) {
-        _messages[existingIndex] = newMessage;
+        _messages[existingIndex] = _mergeMessageVersions(
+          _messages[existingIndex],
+          newMessage,
+        );
+      } else if (optimisticIndex != -1) {
+        _messages[optimisticIndex] = _mergeMessageVersions(
+          _messages[optimisticIndex],
+          newMessage.copyWith(
+            status: MessageStatus.sent,
+            sentAt: newMessage.sentAt ?? newMessage.createdAt,
+            isTemporary: false,
+          ),
+        );
+      } else if (_hasDuplicateSystemMessage(newMessage)) {
+        return;
       } else {
         _messages.add(newMessage);
       }
 
-      _messages.sort(
-        (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
-          b.createdAt ?? DateTime.now(),
-        ),
-      );
+      final deduped = _dedupeMessages(_messages);
+      _messages
+        ..clear()
+        ..addAll(deduped);
     });
 
     _scrollToBottom();
     ChatCache.addMessage(newMessage);
+  }
+
+  List<Message> _dedupeMessages(List<Message> source) {
+    final sorted = [...source]..sort(
+      (a, b) => (a.createdAt ?? DateTime.now()).compareTo(
+        b.createdAt ?? DateTime.now(),
+      ),
+    );
+
+    final deduped = <Message>[];
+    for (final message in sorted) {
+      final existingIndex = message.id == null
+          ? -1
+          : deduped.indexWhere((entry) => entry.id == message.id);
+
+      if (existingIndex != -1) {
+        deduped[existingIndex] = _mergeMessageVersions(
+          deduped[existingIndex],
+          message,
+        );
+        continue;
+      }
+
+      final lastMessage = deduped.isEmpty ? null : deduped.last;
+      if (lastMessage != null && _isDuplicateSystemMessage(lastMessage, message)) {
+        deduped[deduped.length - 1] = message;
+        continue;
+      }
+
+      deduped.add(message);
+    }
+
+    return deduped;
+  }
+
+  bool _hasDuplicateSystemMessage(Message incoming) {
+    return _messages.any((existing) => _isDuplicateSystemMessage(existing, incoming));
+  }
+
+  bool _isDuplicateSystemMessage(Message previous, Message incoming) {
+    if (previous.type != 'system' || incoming.type != 'system') {
+      return false;
+    }
+
+    if (
+        previous.conversationId != incoming.conversationId ||
+        previous.incidentId != incoming.incidentId ||
+        previous.senderId != incoming.senderId) {
+      return false;
+    }
+
+    final previousText = previous.message.trim();
+    final incomingText = incoming.message.trim();
+    if (previousText.isEmpty || previousText != incomingText) {
+      return false;
+    }
+
+    final previousTime = previous.createdAt ?? DateTime.now();
+    final incomingTime = incoming.createdAt ?? DateTime.now();
+    return incomingTime.difference(previousTime).inMinutes.abs() <= 2;
+  }
+
+  int _findMatchingOptimisticMessageIndex(Message serverMessage) {
+    return _messages.indexWhere((entry) {
+      if (!entry.isTemporary) return false;
+      if (entry.conversationId != 0 &&
+          serverMessage.conversationId != 0 &&
+          entry.conversationId != serverMessage.conversationId) {
+        return false;
+      }
+      if (entry.senderId != serverMessage.senderId) return false;
+      if (entry.incidentId != serverMessage.incidentId) return false;
+      if (entry.message.trim() != serverMessage.message.trim()) return false;
+
+      final optimisticTime = entry.createdAt ?? DateTime.now();
+      final serverTime =
+          serverMessage.createdAt ?? serverMessage.sentAt ?? DateTime.now();
+      return optimisticTime.difference(serverTime).inMinutes.abs() <= 2;
+    });
+  }
+
+  Message _mergeMessageVersions(Message current, Message incoming) {
+    final mergedStatus = _messageStatusRank(incoming.status) >=
+            _messageStatusRank(current.status)
+        ? incoming.status
+        : current.status;
+
+    return current.copyWith(
+      id: incoming.id ?? current.id,
+      localId: current.localId ?? incoming.localId,
+      conversationId: incoming.conversationId != 0
+          ? incoming.conversationId
+          : current.conversationId,
+      senderName: incoming.senderName ?? current.senderName,
+      senderRole: incoming.senderRole ?? current.senderRole,
+      message: incoming.message.isNotEmpty ? incoming.message : current.message,
+      type: incoming.type.isNotEmpty ? incoming.type : current.type,
+      createdAt: incoming.createdAt ?? current.createdAt,
+      sentAt: incoming.sentAt ?? current.sentAt ?? incoming.createdAt,
+      deliveredAt: incoming.deliveredAt ?? current.deliveredAt,
+      readAt: incoming.readAt ?? current.readAt,
+      status: mergedStatus,
+      errorMessage: incoming.errorMessage ?? current.errorMessage,
+      isRead: incoming.isRead ?? current.isRead,
+      isTemporary: incoming.isTemporary && current.id == null,
+    );
+  }
+
+  int _messageStatusRank(MessageStatus status) {
+    switch (status) {
+      case MessageStatus.sending:
+        return 0;
+      case MessageStatus.sent:
+        return 1;
+      case MessageStatus.delivered:
+        return 2;
+      case MessageStatus.read:
+        return 3;
+      case MessageStatus.failed:
+        return -1;
+    }
   }
 
   void _handleMessageStatusEvent(
@@ -600,13 +871,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (index == -1) return;
 
       final current = _messages[index];
-      _messages[index] = current.copyWith(
+      final updated = current.copyWith(
         status: isRead ? MessageStatus.read : MessageStatus.delivered,
         readAt: isRead ? eventDate : current.readAt,
         deliveredAt: isRead ? current.deliveredAt : eventDate,
         isRead: isRead ? true : current.isRead,
       );
+      _messages[index] = _mergeMessageVersions(current, updated);
     });
+
+    unawaited(
+      ChatCache.updateMessageStatus(widget.incidentId, messageId, {
+        if (isRead) 'read_at': eventDate.toUtc().toIso8601String(),
+        if (!isRead) 'delivered_at': eventDate.toUtc().toIso8601String(),
+        if (isRead) 'is_read': true,
+      }),
+    );
   }
 
   /// Handle text input changes for typing indicator (Task 2.1, 2.2)
@@ -634,6 +914,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
+    await _refreshActiveConversation();
+    if (_activeConversationId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('AÃºn no hay una conversaciÃ³n activa para este taller'),
+          ),
+        );
+      }
+      return;
+    }
+
     // Stop typing indicator when sending
     _typingTimer?.cancel();
     if (_isTyping) {
@@ -649,11 +941,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       senderName: 'Tú',
       messageText: text,
     );
+    final optimisticMessage = tempMessage.copyWith(
+      conversationId: _activeConversationId,
+    );
 
     // 2. Agregar mensaje temporal INMEDIATAMENTE
     setState(() {
-      _messages.add(tempMessage);
+      _messages.add(optimisticMessage);
     });
+    await ChatCache.addMessage(optimisticMessage);
 
     // 3. Limpiar input y hacer scroll (forzado porque el usuario envió)
     _messageController.clear();
@@ -667,16 +963,61 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         data: {'message': text},
       );
 
+      final payload = response['data'] ?? response;
+      if (_isOfflineQueuedPayload(payload)) {
+        await ChatCache.saveMessages(widget.incidentId, _messages);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Mensaje guardado localmente. Se enviará al reconectar.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       // 5. Reemplazar mensaje temporal con mensaje del servidor
-      final sentMessage = Message.fromJson(response['data'] ?? response);
+      final sentMessage = Message.fromJson(payload);
+      if (sentMessage.conversationId > 0 &&
+          sentMessage.conversationId != _activeConversationId) {
+        await _applyConversationId(sentMessage.conversationId);
+      }
       setState(() {
         final index = _messages.indexWhere(
-          (m) => m.localId == tempMessage.localId,
+          (m) => m.localId == optimisticMessage.localId,
         );
-        if (index != -1) {
-          _messages[index] = sentMessage.copyWith(
-            status: MessageStatus.sent,
-            sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+        final existingServerIndex = _messages.indexWhere(
+          (m) => m.id != null && m.id == sentMessage.id,
+        );
+
+        if (existingServerIndex != -1 && index != -1) {
+          _messages[existingServerIndex] = _mergeMessageVersions(
+            _messages[existingServerIndex],
+            sentMessage.copyWith(
+              status: MessageStatus.sent,
+              sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+              isTemporary: false,
+            ),
+          );
+          _messages.removeAt(index);
+        } else if (index != -1) {
+          _messages[index] = _mergeMessageVersions(
+            _messages[index],
+            sentMessage.copyWith(
+              status: MessageStatus.sent,
+              sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+              isTemporary: false,
+            ),
+          );
+        } else {
+          _messages.add(
+            sentMessage.copyWith(
+              status: MessageStatus.sent,
+              sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+              isTemporary: false,
+            ),
           );
         }
       });
@@ -689,7 +1030,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // 7. Marcar mensaje como fallido
       setState(() {
         final index = _messages.indexWhere(
-          (m) => m.localId == tempMessage.localId,
+          (m) => m.localId == optimisticMessage.localId,
         );
         if (index != -1) {
           _messages[index] = _messages[index].copyWith(
@@ -698,6 +1039,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           );
         }
       });
+      await ChatCache.saveMessages(widget.incidentId, _messages);
 
       debugPrint('[ChatScreen] ❌ Error al enviar mensaje: $e');
 
@@ -708,7 +1050,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             content: const Text('No se pudo enviar el mensaje'),
             action: SnackBarAction(
               label: 'Reintentar',
-              onPressed: () => _retryMessage(tempMessage.localId!),
+              onPressed: () => _retryMessage(optimisticMessage.localId!),
             ),
             duration: const Duration(seconds: 5),
           ),
@@ -740,13 +1082,46 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         data: {'message': failedMessage.message},
       );
 
-      final sentMessage = Message.fromJson(response['data'] ?? response);
+      final payload = response['data'] ?? response;
+      if (_isOfflineQueuedPayload(payload)) {
+        await ChatCache.saveMessages(widget.incidentId, _messages);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Mensaje reencolado. Se enviará al reconectar.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final sentMessage = Message.fromJson(payload);
       setState(() {
-        _messages[messageIndex] = sentMessage.copyWith(
-          status: MessageStatus.sent,
-          sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+        final existingServerIndex = _messages.indexWhere(
+          (m) => m.id != null && m.id == sentMessage.id,
         );
+        if (existingServerIndex != -1 && existingServerIndex != messageIndex) {
+          _messages[existingServerIndex] = _mergeMessageVersions(
+            _messages[existingServerIndex],
+            sentMessage.copyWith(
+              status: MessageStatus.sent,
+              sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+              isTemporary: false,
+            ),
+          );
+          _messages.removeAt(messageIndex);
+        } else {
+          _messages[messageIndex] = _mergeMessageVersions(
+            _messages[messageIndex],
+            sentMessage.copyWith(
+              status: MessageStatus.sent,
+              sentAt: sentMessage.sentAt ?? sentMessage.createdAt,
+              isTemporary: false,
+            ),
+          );
+        }
       });
+      await ChatCache.addMessage(sentMessage);
 
       debugPrint('[ChatScreen] ✅ Mensaje reenviado: ${sentMessage.id}');
     } catch (e) {
@@ -756,6 +1131,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           errorMessage: e.toString(),
         );
       });
+      await ChatCache.saveMessages(widget.incidentId, _messages);
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1609,16 +1985,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.grey[600]!,
-                    ),
-                  ),
-                ),
+                const _TypingDots(),
                 const SizedBox(width: 8),
                 Text(
                   typingText,
@@ -1993,5 +2360,68 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       default:
         return Colors.grey[700]!;
     }
+  }
+
+  bool _isOfflineQueuedPayload(dynamic payload) {
+    if (payload is! Map) return false;
+    return payload['_offline_queued'] == true;
+  }
+}
+
+class _TypingDots extends StatefulWidget {
+  const _TypingDots();
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 18,
+      height: 10,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (_, __) {
+          final t = _controller.value;
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(3, (index) {
+              final opacity = ((t * 3 - index) % 1.0).clamp(0.25, 1.0);
+              return Opacity(
+                opacity: opacity,
+                child: Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
   }
 }

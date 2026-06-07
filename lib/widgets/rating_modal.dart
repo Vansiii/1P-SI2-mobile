@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:merchanic_repair/data/services/api_service.dart';
 import 'package:merchanic_repair/services/rating_service.dart';
 
 /// Modal for rating a service after incident is resolved
 class RatingModal extends StatefulWidget {
   final int incidentId;
-  final String token;
+  final ApiService apiService;
   final VoidCallback onRatingSubmitted;
 
   const RatingModal({
     super.key,
     required this.incidentId,
-    required this.token,
+    required this.apiService,
     required this.onRatingSubmitted,
   });
 
@@ -19,12 +20,18 @@ class RatingModal extends StatefulWidget {
 }
 
 class _RatingModalState extends State<RatingModal> {
-  final RatingService _ratingService = RatingService();
+  late final RatingService _ratingService;
   final TextEditingController _commentController = TextEditingController();
 
   int _selectedRating = 0;
   bool _isSubmitting = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _ratingService = RatingService(widget.apiService);
+  }
 
   @override
   void dispose() {
@@ -48,7 +55,6 @@ class _RatingModalState extends State<RatingModal> {
     try {
       await _ratingService.createRating(
         incidentId: widget.incidentId,
-        token: widget.token,
         rating: _selectedRating,
         comment: _commentController.text.trim().isEmpty
             ? null
@@ -87,9 +93,10 @@ class _RatingModalState extends State<RatingModal> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Title
             const Text(
               'Califica el servicio recibido',
@@ -241,6 +248,7 @@ class _RatingModalState extends State<RatingModal> {
               ],
             ),
           ],
+          ),
         ),
       ),
     );

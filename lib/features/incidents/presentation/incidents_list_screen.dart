@@ -119,24 +119,38 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
     });
 
     // Sincronizar cambios del WebSocket: recargar del HTTP cuando cambia cualquier dato
-    ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
+ref.listen<List<IncidentModel>>(incidentsWebSocketProvider, (
       previous,
       next,
     ) {
       if (previous == null) return;
 
-      // Rebuild triggers on any state change — reload to ensure consistency
-      if (next.length != previous.length) {
-        ref.read(incidentsProvider.notifier).loadIncidents();
-        return;
+      if (next.length > previous.length) {
+        final previousIds = previous.map((incident) => incident.id).toSet();
+        for (final incident in next.where(
+          (item) => !previousIds.contains(item.id),
+        )) {
+          ref.read(incidentsProvider.notifier).addIncidentFromWebSocket(
+            incident,
+          );
+        }
+      } else if (next.length < previous.length) {
+        final nextIds = next.map((incident) => incident.id).toSet();
+        for (final incident in previous.where(
+          (item) => !nextIds.contains(item.id),
+        )) {
+          ref
+              .read(incidentsProvider.notifier)
+              .removeIncidentFromWebSocket(incident.id);
+        }
       }
 
-      // Check if any incident data changed
       for (final nextIncident in next) {
-        final prevIncident = previous.where((i) => i.id == nextIncident.id).firstOrNull;
+        final prevIncident = previous
+            .where((i) => i.id == nextIncident.id)
+            .firstOrNull;
         if (prevIncident == null) {
-          ref.read(incidentsProvider.notifier).loadIncidents();
-          return;
+          continue;
         }
 
         if (prevIncident.prioridadIa != nextIncident.prioridadIa ||
@@ -144,7 +158,10 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
             prevIncident.resumenIa != nextIncident.resumenIa ||
             prevIncident.estadoActual != nextIncident.estadoActual ||
             prevIncident.tallerId != nextIncident.tallerId ||
-            prevIncident.tecnicoId != nextIncident.tecnicoId) {
+            prevIncident.tecnicoId != nextIncident.tecnicoId ||
+            prevIncident.direccionReferencia != nextIncident.direccionReferencia ||
+            prevIncident.latitude != nextIncident.latitude ||
+            prevIncident.longitude != nextIncident.longitude) {
           ref
               .read(incidentsProvider.notifier)
               .updateIncidentFromWebSocket(nextIncident.id, {
@@ -160,6 +177,12 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                   'taller_id': nextIncident.tallerId,
                 if (prevIncident.tecnicoId != nextIncident.tecnicoId)
                   'tecnico_id': nextIncident.tecnicoId,
+                if (prevIncident.direccionReferencia != nextIncident.direccionReferencia)
+                  'direccion_referencia': nextIncident.direccionReferencia,
+                if (prevIncident.latitude != nextIncident.latitude)
+                  'latitude': nextIncident.latitude,
+                if (prevIncident.longitude != nextIncident.longitude)
+                  'longitude': nextIncident.longitude,
               });
         }
       }
@@ -220,7 +243,7 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.textMain),
               onPressed: () {
-                ref.read(incidentsProvider.notifier).loadIncidents();
+                ref.read(incidentsProvider.notifier).refreshIncidents();
               },
               tooltip: 'Recargar emergencias',
             ),
@@ -260,7 +283,7 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
 
             return RefreshIndicator(
               onRefresh: () =>
-                  ref.read(incidentsProvider.notifier).loadIncidents(),
+                  ref.read(incidentsProvider.notifier).refreshIncidents(),
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: incidents.length,
@@ -296,7 +319,7 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: () =>
-                      ref.read(incidentsProvider.notifier).loadIncidents(),
+                      ref.read(incidentsProvider.notifier).refreshIncidents(),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reintentar'),
                   style: ElevatedButton.styleFrom(
@@ -352,34 +375,67 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header con ID y badges
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SizedBox(
+                      width: constraints.maxWidth,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.textMuted.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  incident.id == 0 ? 'Local' : '#${incident.id}',
+                                  style: const TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildAssignmentBadge(incident.assignmentMode),
+                            ],
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.topRight,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                reverse: true,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (incident.id == 0) ...[
+                                      _buildPendingSyncBadge(),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    _buildStatusBadge(
+                                      incident.estadoActual,
+                                      incident.estadoLabel,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      decoration: BoxDecoration(
-                        color: AppColors.textMuted.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '#${incident.id}',
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    _buildAssignmentBadge(incident.assignmentMode),
-                    const Spacer(),
-                    _buildStatusBadge(
-                      incident.estadoActual,
-                      incident.estadoLabel,
-                    ),
-                  ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
 
@@ -397,31 +453,51 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                 const SizedBox(height: 12),
 
                 // Información adicional en grid
-                Row(
-                  children: [
-                    // Prioridad
-                    if (incident.prioridadIa != null)
-                      Expanded(
-                        child: _buildInfoChip(
-                          icon: Icons.priority_high,
-                          label: incident.prioridadLabel,
-                          color: _getPriorityColor(incident.prioridadIa),
-                        ),
-                      ),
-                    if (incident.prioridadIa != null) const SizedBox(width: 8),
+                if (incident.prioridadIa != null || incident.categoriaIa != null) ...[
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final hasPriority = incident.prioridadIa != null;
+                      final hasCategory = incident.categoriaIa != null;
+                      final badgeCount =
+                          (hasPriority ? 1 : 0) + (hasCategory ? 1 : 0);
+                      final spacing = badgeCount > 1 ? 8.0 : 0.0;
+                      final availableWidth = constraints.maxWidth;
+                      final badgeWidth = badgeCount <= 1
+                          ? availableWidth
+                          : ((availableWidth - spacing) / badgeCount)
+                              .clamp(140.0, availableWidth);
 
-                    // Categoría
-                    if (incident.categoriaIa != null)
-                      Expanded(
-                        child: _buildInfoChip(
-                          icon: Icons.category_outlined,
-                          label: incident.categoriaIa!,
-                          color: AppColors.primary,
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            if (hasPriority)
+                              SizedBox(
+                                width: badgeWidth,
+                                child: _buildInfoChip(
+                                  icon: Icons.priority_high,
+                                  label: incident.prioridadLabel,
+                                  color: _getPriorityColor(incident.prioridadIa),
+                                ),
+                              ),
+                            if (hasPriority && hasCategory)
+                              const SizedBox(width: 8),
+                            if (hasCategory)
+                              SizedBox(
+                                width: badgeWidth,
+                                child: _buildInfoChip(
+                                  icon: Icons.category_outlined,
+                                  label: incident.categoriaIa!,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Footer con fecha y ubicación
                 Row(
@@ -440,7 +516,7 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                       ),
                     ),
                     const Spacer(),
-                    if (incident.direccionReferencia != null) ...[
+                    if (_getLocationLabel(incident) != null) ...[
                       const Icon(
                         Icons.location_on_outlined,
                         size: 16,
@@ -449,7 +525,7 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          incident.direccionReferencia!,
+                          _getLocationLabel(incident)!,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: AppColors.textMuted,
@@ -492,10 +568,45 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
           const SizedBox(width: 6),
           Text(
             label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
             style: TextStyle(
               color: _getStatusColor(estado),
               fontWeight: FontWeight.bold,
               fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingSyncBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: AppColors.warning.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.cloud_upload_outlined,
+            size: 12,
+            color: AppColors.warning,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Pendiente de sync',
+            style: TextStyle(
+              color: AppColors.warning,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
             ),
           ),
         ],
@@ -516,25 +627,51 @@ class _IncidentsListScreenState extends ConsumerState<IncidentsListScreen> {
         border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 6),
-          Flexible(
+          Expanded(
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
       ),
     );
+  }
+
+  String? _getLocationLabel(dynamic incident) {
+    final address = (incident.direccionReferencia as String?)?.trim();
+    if (address != null &&
+        address.isNotEmpty &&
+        !_isCoordinateLike(address)) {
+      return address;
+    }
+
+    final hasCoordinates = incident.latitude != 0 || incident.longitude != 0;
+    if (hasCoordinates) {
+      return 'Ubicación pendiente';
+    }
+
+    return null;
+  }
+
+  bool _isCoordinateLike(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.startsWith('coordenadas:') ||
+        normalized.startsWith('ubicación:') ||
+        normalized.startsWith('ubicacion:')) {
+      return true;
+    }
+
+    return RegExp(r'^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$').hasMatch(normalized);
   }
 
   IconData _getStatusIcon(String estado) {

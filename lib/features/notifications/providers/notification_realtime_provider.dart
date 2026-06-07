@@ -2,6 +2,7 @@
 //
 // Subscribes to notification events from [EventDispatcherService] and
 // maintains a deduplicated list of notifications with read/unread status.
+// Persists to DataCache for offline access.
 //
 // Requirements: 8.2, 8.4, 8.5, 8.7, 8.10
 
@@ -11,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:merchanic_repair/core/models/realtime_event.dart';
+import 'package:merchanic_repair/core/services/data_cache.dart';
 import 'package:merchanic_repair/core/services/event_dispatcher_service.dart';
 import 'package:merchanic_repair/features/incidents/providers/incident_realtime_provider.dart';
 
@@ -71,6 +73,30 @@ class NotificationItem {
       receivedAt: receivedAt,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'notificationId': notificationId,
+    'userId': userId,
+    'title': title,
+    'body': body,
+    'isRead': isRead,
+    'notificationType': notificationType,
+    'relatedEntityId': relatedEntityId,
+    'receivedAt': receivedAt,
+  };
+
+  factory NotificationItem.fromJson(Map<String, dynamic> json) {
+    return NotificationItem(
+      notificationId: json['notificationId'] as int,
+      userId: json['userId'] as int,
+      title: json['title'] as String,
+      body: json['body'] as String,
+      isRead: json['isRead'] as bool,
+      notificationType: json['notificationType'] as String?,
+      relatedEntityId: json['relatedEntityId'] as int?,
+      receivedAt: json['receivedAt'] as String?,
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,11 +135,40 @@ class NotificationRealtimeNotifier
     extends StateNotifier<NotificationRealtimeState> {
   NotificationRealtimeNotifier(this._dispatcher)
     : super(const NotificationRealtimeState()) {
+    _seedFromCache();
     _subscribe();
   }
 
   final EventDispatcherService _dispatcher;
   final List<StreamSubscription<RealTimeEvent>> _subscriptions = [];
+
+  void _seedFromCache() {
+    final userId = DataCache.currentUserId;
+    if (userId == null) return;
+    try {
+      final raw = DataCache.getScoped('notifications_data', userId);
+      if (raw == null || raw is! List) return;
+      final items = raw
+          .map((j) => NotificationItem.fromJson(Map<String, dynamic>.from(j)))
+          .toList();
+      state = NotificationRealtimeState(
+        notifications: items,
+        unreadCount: items.where((n) => !n.isRead).length,
+      );
+    } catch (_) {}
+  }
+
+  void _persistToCache() {
+    final userId = DataCache.currentUserId;
+    if (userId == null) return;
+    try {
+      final items = state.notifications.map((n) => n.toJson()).toList();
+      DataCache.putScopedWithTtl(
+        'notifications_data', userId, items,
+        ttl: const Duration(days: 7),
+      );
+    } catch (_) {}
+  }
 
   // ── Subscription setup ────────────────────────────────────────────────────
 
@@ -161,6 +216,7 @@ class NotificationRealtimeNotifier
       notifications: updated,
       unreadCount: updated.where((n) => !n.isRead).length,
     );
+    _persistToCache();
     debugPrint(
       '[NotificationRealtimeNotifier] received: id=${e.notificationId}',
     );
@@ -186,6 +242,7 @@ class NotificationRealtimeNotifier
       notifications: updated,
       unreadCount: updated.where((n) => !n.isRead).length,
     );
+    _persistToCache();
   }
 
   /// Marks all notifications as read.
@@ -194,6 +251,7 @@ class NotificationRealtimeNotifier
         .map((n) => n.copyWith(isRead: true))
         .toList();
     state = state.copyWith(notifications: updated, unreadCount: 0);
+    _persistToCache();
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

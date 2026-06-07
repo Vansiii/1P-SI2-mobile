@@ -151,7 +151,7 @@ class WorkshopSelectionNotifier
 }
 
 final workshopDetailProvider =
-    FutureProvider.family<
+    FutureProvider.autoDispose.family<
       Map<String, dynamic>,
       ({int incidentId, int workshopId})
     >((ref, params) async {
@@ -160,12 +160,12 @@ final workshopDetailProvider =
     });
 
 final workshopPublicProfileProvider =
-    FutureProvider.family<Map<String, dynamic>, int>((ref, workshopId) async {
+    FutureProvider.autoDispose.family<Map<String, dynamic>, int>((ref, workshopId) async {
       final repo = ref.watch(wsWorkshopSelectionRepositoryProvider);
       return repo.getWorkshopPublicProfile(workshopId);
     });
 
-final assignmentHistoryProvider = FutureProvider.family<
+final assignmentHistoryProvider = FutureProvider.autoDispose.family<
     List<AssignmentHistoryItem>,
     ({int incidentId, int workshopId})
 >((ref, params) async {

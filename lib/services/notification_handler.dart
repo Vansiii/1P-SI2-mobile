@@ -34,6 +34,14 @@ class NotificationHandler {
 
       case 'incident_status_changed':
       case 'incident_accepted':
+      case 'incident.assignment_accepted':
+      case 'incident.assignment_rejected':
+      case 'incident.assignment_timeout':
+      case 'incident.reassigned':
+      case 'incident.no_workshop_available':
+      case 'incident.cancelled':
+      case 'incident.work_started':
+      case 'incident.technician_on_way':
       case 'incident.status_changed':
         _handleIncidentStatusChanged(data, router);
         break;

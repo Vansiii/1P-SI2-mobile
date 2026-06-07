@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:merchanic_repair/core/config/api_config.dart';
+import 'package:merchanic_repair/core/services/data_cache.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/data/models/incident.dart';
 import 'package:merchanic_repair/services/api_service.dart';
@@ -329,9 +330,9 @@ class _TechnicianIncidentsScreenState
 
       if (response.containsKey('data')) {
         final incident = Incident.fromJson(response['data']);
+        DataCache.put('incident_$incidentId', response['data']);
         setState(() {
           _incidents.insert(0, incident);
-          // Recalcular incidente activo
           _activeIncident = _findActiveIncident();
         });
         debugPrint(
@@ -339,6 +340,16 @@ class _TechnicianIncidentsScreenState
         );
       }
     } catch (e) {
+      final cached = DataCache.get('incident_$incidentId');
+      if (cached != null && cached is Map && mounted) {
+        final incident = Incident.fromJson(Map<String, dynamic>.from(cached));
+        setState(() {
+          _incidents.insert(0, incident);
+          _activeIncident = _findActiveIncident();
+        });
+        debugPrint('📦 [TechnicianIncidents] Incidente desde cache: $incidentId');
+        return;
+      }
       debugPrint(
         '❌ [TechnicianIncidents] Error al cargar incidente $incidentId: $e',
       );
@@ -375,6 +386,7 @@ class _TechnicianIncidentsScreenState
         final List<dynamic> data = response['data'] ?? [];
 
         debugPrint('✅ Found ${data.length} incidents');
+        DataCache.put('technician_incidents', data);
 
         if (data.isEmpty) {
           setState(() {
@@ -416,8 +428,32 @@ class _TechnicianIncidentsScreenState
         });
       }
     } on DioException catch (e) {
-      // Errores de Dio (red, timeout, etc.)
       debugPrint('❌ DioException: ${e.type} - ${e.message}');
+
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          (e.response?.statusCode == 0)) {
+        final cached = DataCache.get('technician_incidents');
+        if (cached != null && cached is List) {
+          _incidents = cached.map((json) => Incident.fromJson(Map<String, dynamic>.from(json))).toList();
+          _incidents.sort((a, b) {
+            final aActive = _isActiveStatus(a.estadoActual);
+            final bActive = _isActiveStatus(b.estadoActual);
+            if (aActive && !bActive) return -1;
+            if (!aActive && bActive) return 1;
+            return (b.createdAt ?? DateTime.now()).compareTo(a.createdAt ?? DateTime.now());
+          });
+          _activeIncident = _findActiveIncident();
+          if (mounted) {
+            setState(() { _isLoading = false; _errorMessage = null; });
+          }
+          debugPrint('📦 [TechnicianIncidents] Loaded ${_incidents.length} from cache');
+          return;
+        }
+      }
+
+      // Errores de Dio (red, timeout, etc.)
 
       String errorMsg;
       if (e.response != null) {

@@ -1,9 +1,21 @@
+import 'dart:convert';
+import 'dart:math';
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:drift/drift.dart';
 import '../../core/config/api_config.dart';
+import '../db/app_database.dart';
 import 'storage_service.dart';
 
 /// Callback global para manejar sesión expirada
 typedef OnSessionExpiredCallback = void Function();
+
+class _QPattern {
+  final String type;
+  final RegExp pattern;
+  final String method;
+  const _QPattern(this.type, this.pattern, this.method);
+}
 
 /// API Service - Cliente HTTP con Dio
 class ApiService {
@@ -21,15 +33,14 @@ class ApiService {
       ),
     );
 
-    // Add interceptors
     _dio.interceptors.add(_authInterceptor());
+    _dio.interceptors.add(_offlineInterceptor());
     _dio.interceptors.add(_errorInterceptor());
     _dio.interceptors.add(_loggingInterceptor());
   }
 
   Dio get dio => _dio;
 
-  // Auth Interceptor - Añade token a las peticiones
   Interceptor _authInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -38,6 +49,357 @@ class ApiService {
           options.headers['Authorization'] = 'Bearer $token';
         }
         handler.next(options);
+      },
+    );
+  }
+
+  static final _queueable = [
+    _QPattern('CREATE_INCIDENT',        RegExp(r'^(?:/api/v1)?/incidentes/?$'), 'POST'),
+    _QPattern('UPDATE_INCIDENT_STATUS', RegExp(r'^(?:/api/v1)?/incidentes/\d+/estado$'), 'PATCH'),
+    _QPattern('UPDATE_INCIDENT_STATE',   RegExp(r'^(?:/api/v1)?/incident-states/\d+$'), 'POST'),
+    _QPattern('CANCEL_INCIDENT',         RegExp(r'^(?:/api/v1)?/incidentes/\d+/cancelar$'), 'POST'),
+    _QPattern('COMPLETE_INCIDENT',       RegExp(r'^(?:/api/v1)?/incidentes/\d+/completar$'), 'POST'),
+    _QPattern('SEND_CHAT_MESSAGE',       RegExp(r'^(?:/api/v1)?/chat'), 'POST'),
+    _QPattern('SELECT_WORKSHOP',         RegExp(r'^(?:/api/v1)?/incidentes/\d+/select-workshop$'), 'POST'),
+    _QPattern('UPDATE_LOCATION',         RegExp(r'^(?:/api/v1)?/tracking/technicians/\d+/location/?$'), 'POST'),
+    _QPattern('BATCH_LOCATION',          RegExp(r'^(?:/api/v1)?/tracking/technicians/\d+/location/batch$'), 'POST'),
+    _QPattern('CREATE_VEHICLE',          RegExp(r'^(?:/api/v1)?/vehiculos/?$'), 'POST'),
+    _QPattern('UPDATE_VEHICLE',          RegExp(r'^(?:/api/v1)?/vehiculos/\d+$'), 'PATCH'),
+    _QPattern('DELETE_VEHICLE',          RegExp(r'^(?:/api/v1)?/vehiculos/\d+$'), 'DELETE'),
+    _QPattern('UPLOAD_EVIDENCE',         RegExp(r'^(?:/api/v1)?/incidentes/\d+/evidence/?$'), 'POST'),
+    _QPattern('CREATE_RATING',          RegExp(r'^(?:/api/v1)?/ratings/incidents/\d+$'), 'POST'),
+    _QPattern('MARK_NOTIFICATION_READ',  RegExp(r'^(?:/api/v1)?/notifications/[\w\-]+/read$'), 'PATCH'),
+    _QPattern('CANCEL_REQUEST',          RegExp(r'^(?:/api/v1)?/cancellation/incidents/\d+/request$'), 'POST'),
+    _QPattern('CANCEL_RESPOND',          RegExp(r'^(?:/api/v1)?/cancellation/requests/[\w\-]+/respond$'), 'POST'),
+    _QPattern('UPDATE_PROFILE',          RegExp(r'^(?:/api/v1)?/auth/me/?$'), 'PATCH'),
+  ];
+
+  static _QPattern? _findMatch(String path, String method) {
+    for (final p in _queueable) {
+      if (p.method == method && p.pattern.hasMatch(path)) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _buildFakeData(_QPattern match, RequestOptions options, String cid, int userId) {
+    final body = options.data is Map
+        ? Map<String, dynamic>.from(options.data as Map)
+        : <String, dynamic>{};
+    final now = DateTime.now().toIso8601String();
+
+    Map<String, dynamic> data = {'_offline_queued': true, '_client_operation_id': cid};
+
+    switch (match.type) {
+      case 'CREATE_INCIDENT':
+        data.addAll({
+          'id': 0, 'client_id': 0,
+          'vehiculo_id': body['vehiculo_id'] ?? 0,
+          'latitude': (body['latitude'] as num?)?.toDouble() ?? 0.0,
+          'longitude': (body['longitude'] as num?)?.toDouble() ?? 0.0,
+          'direccion_referencia': body['direccion_referencia'],
+          'descripcion': body['descripcion'] ?? '',
+          'estado_actual': 'pendiente', 'es_ambiguo': false,
+          'assignment_mode': body['assignment_mode'] ?? 'auto',
+          'created_at': now, 'updated_at': now,
+          'imagenes': body['imagenes'] ?? [], 'audios': body['audios'] ?? [],
+        });
+        break;
+      case 'UPDATE_INCIDENT_STATUS':
+      case 'UPDATE_INCIDENT_STATE':
+        data.addAll({
+          'id': _extractId(options.path) ?? 0,
+          'estado_actual': body['estado'] ?? body['estado_actual'] ?? 'unknown',
+          'updated_at': now,
+        });
+        break;
+      case 'CANCEL_INCIDENT':
+      case 'COMPLETE_INCIDENT':
+        data.addAll({
+          'id': _extractId(options.path) ?? 0,
+          'estado_actual': match.type == 'CANCEL_INCIDENT' ? 'cancelado' : 'completado',
+          'updated_at': now,
+        });
+        break;
+      case 'CREATE_VEHICLE':
+        data.addAll({
+          'id': 0, 'client_id': 0,
+          'matricula': body['matricula'] ?? '',
+          'marca': body['marca'] ?? 'Desconocida',
+          'modelo': body['modelo'] ?? 'Desconocido',
+          'anio': body['anio'] ?? 0,
+          'color': body['color'] ?? 'N/A',
+          'imagen': body['imagen'],
+          'is_active': true,
+          'created_at': now, 'updated_at': now,
+        });
+        break;
+      case 'UPDATE_VEHICLE':
+        data.addAll({...body, 'id': _extractId(options.path) ?? 0, 'updated_at': now});
+        break;
+      case 'DELETE_VEHICLE':
+        data.addAll({'id': _extractId(options.path) ?? 0, 'deleted': true});
+        break;
+      case 'SEND_CHAT_MESSAGE':
+        data.addAll({
+          'id': 0,
+          'incident_id': _extractId(options.path) ?? 0,
+          'conversation_id': body['conversation_id'] ?? 0,
+          'sender_id': userId,
+          'sender_name': 'Tú',
+          'message': body['message'] ?? '',
+          'message_type': body['message_type'] ?? 'text',
+          'created_at': now,
+          'status': 'sending',
+          'is_temporary': true,
+        });
+        break;
+      case 'UPDATE_LOCATION':
+      case 'BATCH_LOCATION':
+        data.addAll({'ok': true, 'recorded_at': now});
+        break;
+      case 'SELECT_WORKSHOP':
+        data.addAll({
+          'incident_id': _extractId(options.path) ?? 0,
+          'workshop_id': body['workshop_id'] ?? 0,
+          'selected_at': now,
+          'status': 'pending_confirmation',
+        });
+        break;
+      case 'UPLOAD_EVIDENCE':
+        data.addAll({
+          'id': 0, 'incident_id': _extractId(options.path) ?? 0,
+          'file_url': '', 'status': 'pending_upload',
+          'client_evidence_id': cid,
+          'created_at': now,
+        });
+        break;
+      case 'MARK_NOTIFICATION_READ':
+        data.addAll({'read': true, 'updated_at': now});
+        break;
+      case 'CREATE_RATING':
+        data.addAll({
+          'incident_id': _extractId(options.path) ?? 0,
+          'rating': body['rating'],
+          'comment': body['comment'],
+          'created_at': now,
+        });
+        break;
+      case 'CANCEL_REQUEST':
+        data.addAll({
+          'incident_id': _extractId(options.path) ?? 0,
+          'status': 'pending',
+          'reason': body['reason'],
+          'created_at': now,
+        });
+        break;
+      case 'CANCEL_RESPOND':
+        data.addAll({
+          'status': body['accepted'] == true ? 'accepted' : 'rejected',
+          'updated_at': now,
+        });
+        break;
+      case 'UPDATE_PROFILE':
+        data.addAll({...body, 'updated_at': now});
+        break;
+    }
+    return data;
+  }
+
+  static int? _extractId(String path) {
+    final m = RegExp(r'/(\d+)(?:/|$)').firstMatch(path);
+    return m != null ? int.tryParse(m.group(1)!) : null;
+  }
+
+  Future<void> _queueAndResolve(
+    _QPattern match, RequestOptions options, dynamic handler,
+  ) async {
+    final body = options.data is Map
+        ? Map<String, dynamic>.from(options.data as Map)
+        : <String, dynamic>{};
+    try {
+      if (match.type == 'CREATE_INCIDENT') {
+        final vehiculoId = body['vehiculo_id'];
+        if (vehiculoId == null || vehiculoId == 0) {
+          handler.reject(DioException(
+            requestOptions: options,
+            error: 'vehiculo_id es requerido para crear un incidente',
+            type: DioExceptionType.badResponse,
+            response: Response(
+              requestOptions: options,
+              statusCode: 400,
+              data: {'error': {'message': 'vehiculo_id es requerido'}},
+            ),
+          ));
+          return;
+        }
+      }
+
+      final cid = _generateUuid();
+      final user = await _storageService.getUserData();
+      final userId = user?.id ?? 0;
+      final now = DateTime.now();
+      final normalizedPayload = _normalizeQueuedPayload(
+        match: match,
+        path: options.path,
+        body: body,
+      );
+      final syncOperationType = _resolveSyncOperationType(match.type);
+
+      final db = AppDatabase();
+      await db.offlineQueueDao.insertOperation(OfflineOperationsCompanion.insert(
+        clientOperationId: cid,
+        userId: userId,
+        operationType: syncOperationType,
+        endpoint: Value(options.path),
+        method: Value(options.method),
+        payloadJson: jsonEncode(normalizedPayload),
+        createdAtClient: Value(now),
+        updatedAtClient: Value(now),
+      ));
+
+      final fakeResponse = Response(
+        requestOptions: options,
+        statusCode: 202,
+        data: {
+          'success': true,
+          'data': _buildFakeData(match, options, cid, userId),
+          'message': 'Operación guardada localmente',
+        },
+      );
+      handler.resolve(fakeResponse);
+    } catch (_) {
+      handler.next(options);
+    }
+  }
+
+  String _generateUuid() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-'
+        '${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-'
+        '${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+
+  String _resolveSyncOperationType(String operationType) {
+    switch (operationType) {
+      case 'UPDATE_INCIDENT_STATE':
+        return 'UPDATE_INCIDENT';
+      case 'CANCEL_INCIDENT':
+      case 'COMPLETE_INCIDENT':
+        return 'UPDATE_INCIDENT_STATUS';
+      case 'BATCH_LOCATION':
+        return 'UPDATE_LOCATION';
+      default:
+        return operationType;
+    }
+  }
+
+  Map<String, dynamic> _normalizeQueuedPayload({
+    required _QPattern match,
+    required String path,
+    required Map<String, dynamic> body,
+  }) {
+    final normalized = Map<String, dynamic>.from(body);
+    final pathId = _extractId(path);
+
+    switch (match.type) {
+      case 'SEND_CHAT_MESSAGE':
+        normalized['incident_id'] ??= pathId;
+        normalized['message_type'] ??=
+            normalized.remove('type') ?? 'text';
+        break;
+      case 'UPDATE_INCIDENT_STATUS':
+        normalized['incident_id'] ??= pathId;
+        normalized['estado'] ??=
+            normalized['estado_actual'] ?? normalized['status'];
+        break;
+      case 'CANCEL_INCIDENT':
+        normalized['incident_id'] ??= pathId;
+        normalized['estado'] = 'cancelado';
+        break;
+      case 'COMPLETE_INCIDENT':
+        normalized['incident_id'] ??= pathId;
+        normalized['estado'] ??= 'resuelto';
+        break;
+      case 'UPDATE_INCIDENT_STATE':
+        normalized['incident_id'] ??= pathId;
+        break;
+      case 'SELECT_WORKSHOP':
+      case 'UPLOAD_EVIDENCE':
+        normalized['incident_id'] ??= pathId;
+        break;
+      case 'UPDATE_VEHICLE':
+      case 'DELETE_VEHICLE':
+        normalized['vehiculo_id'] ??= pathId;
+        break;
+      case 'BATCH_LOCATION':
+        final locations = normalized['locations'];
+        if (locations is List && locations.isNotEmpty) {
+          final latest = locations.last;
+          if (latest is Map) {
+            final latestMap = Map<String, dynamic>.from(latest);
+            normalized
+              ..['latitude'] = latestMap['latitude']
+              ..['longitude'] = latestMap['longitude']
+              ..['accuracy'] = latestMap['accuracy']
+              ..['speed'] = latestMap['speed']
+              ..['heading'] = latestMap['heading']
+              ..['recorded_at'] = latestMap['recorded_at'];
+          }
+        }
+        break;
+    }
+
+    return normalized;
+  }
+
+  Interceptor _offlineInterceptor() {
+    return InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        if (options.method.toUpperCase() == 'GET') {
+          handler.next(options);
+          return;
+        }
+        final match = _findMatch(options.path, options.method.toUpperCase());
+        if (match == null) {
+          handler.next(options);
+          return;
+        }
+        final results = await Connectivity().checkConnectivity();
+        final offline = results.every((r) => r == ConnectivityResult.none);
+        if (offline) {
+          await _queueAndResolve(match, options, handler);
+          return;
+        }
+        handler.next(options);
+      },
+      onError: (error, handler) async {
+        final isConnectionError = error.type == DioExceptionType.connectionError ||
+            error.type == DioExceptionType.connectionTimeout ||
+            error.type == DioExceptionType.receiveTimeout ||
+            (error.response?.statusCode == 0);
+        final isServerError = error.response?.statusCode != null &&
+            error.response!.statusCode! >= 500;
+        if (isConnectionError || isServerError) {
+          final match = _findMatch(
+            error.requestOptions.path,
+            error.requestOptions.method.toUpperCase(),
+          );
+          if (match != null) {
+            await _queueAndResolve(match, error.requestOptions, handler);
+            return;
+          }
+        }
+        handler.next(error);
       },
     );
   }
@@ -116,8 +478,15 @@ class ApiService {
     return _dio.patch(path, data: data);
   }
 
-  Future<Response> deleteRaw(String path, {dynamic data}) {
-    return _dio.delete(path, data: data);
+  Future<Response> deleteRaw(String path, {dynamic data, Map<String, dynamic>? queryParameters}) {
+    return _dio.delete(path, data: data, queryParameters: queryParameters);
+  }
+
+  Future<Response> uploadFile(String path, String filePath, {String fieldName = 'file'}) async {
+    final formData = FormData.fromMap({
+      fieldName: await MultipartFile.fromFile(filePath),
+    });
+    return _dio.post(path, data: formData);
   }
 
   // Helper methods - devuelven Map directamente para facilidad de uso en nuevos archivos
@@ -383,7 +752,7 @@ class ApiService {
   /// Eliminar todos los tokens del usuario (útil para logout)
   Future<void> deleteAllUserPushTokens() async {
     try {
-      await delete('/push/tokens/unregister-all');
+      await delete('/api/v1/push/tokens/unregister-all');
     } catch (e) {
       rethrow;
     }
@@ -520,6 +889,56 @@ class ApiService {
         queryParameters: params,
       );
       return result['data'] as Map<String, dynamic>;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // ============================================================================
+  // ROUTING METHODS (OSRM)
+  // ============================================================================
+
+  Future<Map<String, dynamic>> calculateRoute({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    try {
+      final result = await post('/api/v1/routing/calculate-route', data: {
+        'origin_lat': originLat,
+        'origin_lng': originLng,
+        'dest_lat': destLat,
+        'dest_lng': destLng,
+      });
+      // The response may be { data: {...} } or directly the route object
+      final data = result['data'];
+      return (data is Map<String, dynamic>) ? data : result;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> calculateETA({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+    double? currentSpeedKmh,
+  }) async {
+    try {
+      final reqData = <String, dynamic>{
+        'origin_lat': originLat,
+        'origin_lng': originLng,
+        'dest_lat': destLat,
+        'dest_lng': destLng,
+      };
+      if (currentSpeedKmh != null) {
+        reqData['current_speed_kmh'] = currentSpeedKmh;
+      }
+      final result = await post('/api/v1/routing/calculate-eta', data: reqData);
+      final data = result['data'];
+      return (data is Map<String, dynamic>) ? data : result;
     } catch (e) {
       rethrow;
     }

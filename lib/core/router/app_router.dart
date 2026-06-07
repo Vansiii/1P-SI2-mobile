@@ -27,6 +27,7 @@ import '../../features/incidents/presentation/incident_detail_screen.dart';
 import '../../features/incidents/presentation/workshop_selection_screen.dart';
 import '../../features/incidents/presentation/workshop_map_screen.dart';
 import '../../features/incidents/presentation/workshop_detail_screen.dart';
+import '../widgets/sync_center_screen.dart';
 import '../../features/auth/providers/auth_provider.dart';
 
 /// App Router Configuration with GoRouter
@@ -160,6 +161,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const HomeScreen(),
       ),
       GoRoute(
+        path: '/sync-center',
+        name: 'sync-center',
+        builder: (context, state) => const SyncCenterScreen(),
+      ),
+      GoRoute(
         path: '/edit-profile',
         name: 'edit-profile',
         builder: (context, state) => const EditProfileScreen(),
@@ -255,7 +261,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         name: 'select-workshop',
         builder: (context, state) {
           final id = int.parse(state.pathParameters['id']!);
-          return WorkshopSelectionScreen(incidentId: id);
+          return WorkshopSelectionScreen(
+            incidentId: id,
+            origin: state.uri.queryParameters['origin'] ?? 'report',
+          );
         },
       ),
       GoRoute(
@@ -263,7 +272,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         name: 'workshop-map',
         builder: (context, state) {
           final id = int.parse(state.pathParameters['id']!);
-          return WorkshopMapScreen(incidentId: id);
+          return WorkshopMapScreen(
+            incidentId: id,
+            origin: state.uri.queryParameters['origin'] ?? 'report',
+          );
         },
       ),
       GoRoute(
@@ -275,8 +287,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           final workshopId =
               int.parse(state.pathParameters['workshopId']!);
           return WorkshopDetailScreen(
+            key: ValueKey('workshop-detail-$incidentId-$workshopId'),
             incidentId: incidentId,
             workshopId: workshopId,
+            origin: state.uri.queryParameters['origin'] ?? 'report',
           );
         },
       ),

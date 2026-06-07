@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show WebSocket;
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:merchanic_repair/core/config/api_config.dart';
 import 'package:merchanic_repair/core/websocket/event_types.dart';
 import 'package:merchanic_repair/core/websocket/event_models.dart';
@@ -188,7 +191,7 @@ class WebSocketService {
   ///
   /// On failure the service schedules an automatic reconnect with exponential
   /// backoff (see [_scheduleReconnect]).
-  void connect(String endpoint, {String? token}) async {
+  Future<void> connect(String endpoint, {String? token}) async {
     try {
       // ✅ Diagnostic logging
       debugPrint(
@@ -229,7 +232,7 @@ class WebSocketService {
       // ✅ Set reconnecting flag BEFORE disconnect to prevent race conditions
       _isReconnecting = true;
 
-      disconnect();
+      _closeConnection(preserveReconnectState: true);
       _currentEndpoint = endpoint;
       _currentToken = token;
 
@@ -249,25 +252,19 @@ class WebSocketService {
         '[WebSocketService] 🔌 Connecting to: ${uriWithToken.toString().replaceAll(RegExp(r'token=[^&]+'), 'token=***')}',
       );
 
-      _channel = WebSocketChannel.connect(uriWithToken);
+      final socket = await WebSocket.connect(uriWithToken.toString());
+      _channel = IOWebSocketChannel(socket);
       _isConnected = true;
 
-      // Successful connection — reset backoff counter and stop polling
-      _reconnectAttempts = 0;
       stopPolling();
 
-      _emitConnectionStatus(ConnectionStatus.connected);
-      debugPrint('[WebSocketService] ✅ Connected successfully to $endpoint');
-
-      // Request any events missed while disconnected (Task 19.1)
-      await syncMissedEvents();
-
-      // ✅ Cancel previous subscription if it exists
       await _channelSubscription?.cancel();
-
       _channelSubscription = _channel!.stream.listen(
         (message) {
           try {
+            _reconnectAttempts = 0;
+            _isPollingMode = false;
+
             final data = jsonDecode(message as String) as Map<String, dynamic>;
 
             // Check for authentication error in message
@@ -328,7 +325,11 @@ class WebSocketService {
 
       _startHeartbeat();
 
-      // ✅ Reset reconnecting flag after successful connection
+      _emitConnectionStatus(ConnectionStatus.connected);
+      debugPrint('[WebSocketService] ✅ Connected successfully to $endpoint');
+
+      await syncMissedEvents();
+
       _isReconnecting = false;
     } catch (e, stackTrace) {
       final errMsg = '[WebSocketService] Failed to connect: $e';
@@ -352,6 +353,10 @@ class WebSocketService {
   }
 
   void disconnect() {
+    _closeConnection(preserveReconnectState: false);
+  }
+
+  void _closeConnection({required bool preserveReconnectState}) {
     debugPrint(
       '[WebSocketService] 🔌 DISCONNECT called: '
       'endpoint=$_currentEndpoint, isConnected=$_isConnected',
@@ -374,14 +379,16 @@ class WebSocketService {
       _emitConnectionStatus(ConnectionStatus.disconnected);
     }
     _isConnected = false;
-    // ✅ Don't reset _isReconnecting here if we're in the middle of a reconnection
-    // It will be reset in connect() or on error
-    _currentEndpoint = null;
-    _currentToken = null;
-    _reconnectAttempts = 0;
     _lastPingSent = null;
     _lastPongReceived = null;
     stopPolling();
+
+    if (!preserveReconnectState) {
+      _isReconnecting = false;
+      _currentEndpoint = null;
+      _currentToken = null;
+      _reconnectAttempts = 0;
+    }
 
     debugPrint('[WebSocketService] ✅ Disconnected successfully');
   }
@@ -782,18 +789,28 @@ class WebSocketService {
 
   // ── Reconnection with polling fallback (Task 20.1) ───────────────────────
 
-  void _scheduleReconnect() {
+  Future<void> _scheduleReconnect() async {
     if (_currentEndpoint == null) return;
 
-    // ✅ Prevent concurrent reconnection attempts
     if (_isReconnecting) {
       debugPrint(
         '[WebSocketService] Reconnection already in progress, skipping.',
       );
       return;
     }
+    _isReconnecting = true;
+
+    final results = await Connectivity().checkConnectivity();
+    final offline = results.every((r) => r == ConnectivityResult.none);
+    if (offline) {
+      debugPrint('[WebSocketService] Device offline — waiting for network before reconnecting.');
+      _isReconnecting = false;
+      _activatePollingMode();
+      return;
+    }
 
     if (_reconnectAttempts >= _maxReconnectAttempts) {
+      _isReconnecting = false;
       debugPrint(
         '[WebSocketService] Max reconnect attempts ($_maxReconnectAttempts) '
         'reached — switching to polling mode.',
@@ -804,7 +821,6 @@ class WebSocketService {
 
     final delaySeconds = min(pow(2, _reconnectAttempts).toInt(), 16);
     _reconnectAttempts++;
-    _isReconnecting = true; // ✅ Set reconnection flag
 
     debugPrint(
       '[WebSocketService] Scheduling reconnect attempt $_reconnectAttempts '

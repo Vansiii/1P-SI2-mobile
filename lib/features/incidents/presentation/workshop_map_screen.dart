@@ -4,13 +4,19 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
+import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import '../providers/workshop_selection_provider.dart';
 import '../data/models/workshop_selection_model.dart';
 
 class WorkshopMapScreen extends ConsumerStatefulWidget {
   final int incidentId;
+  final String origin;
 
-  const WorkshopMapScreen({super.key, required this.incidentId});
+  const WorkshopMapScreen({
+    super.key,
+    required this.incidentId,
+    this.origin = 'report',
+  });
 
   @override
   ConsumerState<WorkshopMapScreen> createState() => _WorkshopMapScreenState();
@@ -71,11 +77,7 @@ class _WorkshopMapScreenState extends ConsumerState<WorkshopMapScreen> {
                   initialZoom: 12.5,
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.merchanic.app',
-                  ),
+                  const CachedOsmTileLayer(),
                   MarkerLayer(
                     markers: _buildMarkers(workshops),
                   ),
@@ -207,9 +209,14 @@ class _WorkshopMapScreenState extends ConsumerState<WorkshopMapScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => context.push(
-                      '/incidents/$incidentId/workshop-detail/${w.workshopId}',
-                    ),
+                    onPressed: () async {
+                      final selected = await context.push<bool>(
+                        '/incidents/$incidentId/workshop-detail/${w.workshopId}'
+                        '?origin=${widget.origin}',
+                      );
+                      if (selected != true || !mounted) return;
+                      context.pop(true);
+                    },
                     icon: const Icon(Icons.info_outline, size: 16),
                     label: const Text('Ver detalles',
                         style: TextStyle(fontSize: 13)),

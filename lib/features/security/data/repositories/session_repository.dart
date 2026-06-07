@@ -1,76 +1,52 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import '../../../../core/config/api_config.dart';
-import '../../../../data/services/storage_service.dart';
+import '../../../../core/services/data_cache.dart';
+import '../../../../data/services/api_service.dart';
 import '../models/session_model.dart';
 
 class SessionRepository {
-  final StorageService _storageService;
+  final ApiService _apiService;
 
-  SessionRepository(this._storageService);
+  SessionRepository(this._apiService);
 
   Future<SessionListModel> getSessions() async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) {
-      throw Exception('No hay token de autenticación');
-    }
-
-    final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sessions}'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as Map<String, dynamic>;
+    try {
+      final response = await _apiService.getRaw('${ApiConfig.sessions}');
+      final data = response.data as Map<String, dynamic>;
+      DataCache.put('sessions', data);
       return SessionListModel.fromJson(data);
-    } else {
-      throw Exception('Error al obtener sesiones: ${response.statusCode}');
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          (e.response?.statusCode == 0)) {
+        final cached = DataCache.get('sessions');
+        if (cached != null && cached is Map) {
+          return SessionListModel.fromJson(Map<String, dynamic>.from(cached));
+        }
+      }
+      rethrow;
     }
   }
 
   Future<void> revokeSession(String jti) async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) {
-      throw Exception('No hay token de autenticación');
-    }
-
-    final response = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sessions}/$jti'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Error al cerrar sesión: ${response.statusCode}');
+    try {
+      final response = await _apiService.deleteRaw('${ApiConfig.sessions}/$jti');
+      final data = response.data as Map<String, dynamic>;
+      if (data['data'] is Map && (data['data'] as Map)['_offline_queued'] == true) return;
+    } on DioException {
+      rethrow;
     }
   }
 
   Future<int> revokeAllSessions() async {
-    final token = await _storageService.getAccessToken();
-    if (token == null) {
-      throw Exception('No hay token de autenticación');
-    }
-
-    final response = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.sessions}'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as Map<String, dynamic>;
-      return data['revoked_count'] as int;
-    } else {
-      throw Exception(
-        'Error al cerrar todas las sesiones: ${response.statusCode}',
-      );
+    try {
+      final response = await _apiService.deleteRaw('${ApiConfig.sessions}');
+      final data = response.data as Map<String, dynamic>;
+      if (data['data'] is Map && (data['data'] as Map)['_offline_queued'] == true) return 0;
+      return data['revoked_count'] as int? ?? 0;
+    } on DioException {
+      rethrow;
     }
   }
 }
