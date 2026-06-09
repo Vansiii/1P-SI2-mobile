@@ -184,6 +184,7 @@ class SyncManager with WidgetsBindingObserver {
 
     final pathRegex = RegExp(r'local://[^\s"' + "'" + r'\n,]+');
     final uploadedUrls = <String, String>{}; // localPath → realUrl
+    final successOpIds = <int>{}; // ops whose files were successfully uploaded
 
     for (final op in allPending) {
       try {
@@ -203,7 +204,7 @@ class SyncManager with WidgetsBindingObserver {
           final file = File(localPath);
           if (!await file.exists()) {
             debugPrint('[SyncManager] File not found: $localPath');
-            uploadedUrls[localUrl] = localUrl; // Keep as-is, can't upload
+            // Don't keep local:// URL, file is gone — skip
             continue;
           }
 
@@ -238,7 +239,7 @@ class SyncManager with WidgetsBindingObserver {
             }
           } catch (e) {
             debugPrint('[SyncManager] Upload error for $localPath: $e');
-            uploadedUrls[localUrl] = localUrl; // Keep as-is
+            // DON'T keep local:// URL — backend will reject it, avoid polluting DB
           }
         }
 
@@ -253,15 +254,25 @@ class SyncManager with WidgetsBindingObserver {
           await dao.updateOperationPayload(op.id, jsonEncode(payload));
           debugPrint('[SyncManager] Updated payload for ${op.operationType}');
         }
+
+        // Track if this op had all local:// URLs replaced
+        final updatedStr = jsonEncode(payload);
+        if (!pathRegex.hasMatch(updatedStr)) {
+          successOpIds.add(op.id);
+        }
       } catch (e) {
         debugPrint('[SyncManager] Error scanning op for local files: $e');
       }
     }
 
-    // Mark dedicated UPLOAD_FILE operations as synced since files are uploaded
+    // Mark dedicated UPLOAD_FILE operations as synced ONLY if files were uploaded successfully
     for (final op in allPending) {
       if (op.operationType == 'UPLOAD_FILE') {
-        await dao.updateSyncStatus(op.id, 'synced');
+        if (successOpIds.contains(op.id)) {
+          await dao.updateSyncStatus(op.id, 'synced');
+        } else {
+          debugPrint('[SyncManager] UPLOAD_FILE ${op.id} failed, leaving as pending for retry');
+        }
       }
     }
 

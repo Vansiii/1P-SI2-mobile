@@ -102,6 +102,17 @@ enum EventType {
   workshopUpdated,
   workshopBalanceUpdated,
 
+  // ── Cotizacion events (CU32) ──────────────────────────────────────────────
+  cotizacionSolicitada,
+  cotizacionIaCompletada,
+  cotizacionRespuestaRecibida,
+  cotizacionTallerSeleccionado,
+  cotizacionTallerRechazado,
+  cotizacionPagoIniciado,
+  cotizacionPagoConfirmado,
+  cotizacionCancelada,
+  cotizacionCompletada,
+
   // ── System events ─────────────────────────────────────────────────────────
   ping,
   pong,
@@ -280,6 +291,17 @@ const Map<String, EventType> _eventTypeMap = {
   'workshop_updated': EventType.workshopUpdated,
   'workshop_balance_updated': EventType.workshopBalanceUpdated,
 
+  // ── Cotizacion (CU32) ──────────────────────────────────────────────────
+  'cotizacion.solicitada': EventType.cotizacionSolicitada,
+  'cotizacion.ia_completada': EventType.cotizacionIaCompletada,
+  'cotizacion.respuesta_recibida': EventType.cotizacionRespuestaRecibida,
+  'cotizacion.taller_seleccionado': EventType.cotizacionTallerSeleccionado,
+  'cotizacion.taller_rechazado': EventType.cotizacionTallerRechazado,
+  'cotizacion.pago_iniciado': EventType.cotizacionPagoIniciado,
+  'cotizacion.pago_confirmado': EventType.cotizacionPagoConfirmado,
+  'cotizacion.cancelada': EventType.cotizacionCancelada,
+  'cotizacion.completada': EventType.cotizacionCompletada,
+
   // ── Push / FCM ─────────────────────────────────────────────────────────
   'push.sent': EventType.notificationCreated,
   'push.failed': EventType.error,
@@ -371,6 +393,15 @@ final Map<EventType, String> _reverseEventTypeMap = {
   EventType.workshopVerified: 'workshop.verified',
   EventType.workshopUpdated: 'workshop.updated',
   EventType.workshopBalanceUpdated: 'workshop.balance_updated',
+  EventType.cotizacionSolicitada: 'cotizacion.solicitada',
+  EventType.cotizacionIaCompletada: 'cotizacion.ia_completada',
+  EventType.cotizacionRespuestaRecibida: 'cotizacion.respuesta_recibida',
+  EventType.cotizacionTallerSeleccionado: 'cotizacion.taller_seleccionado',
+  EventType.cotizacionTallerRechazado: 'cotizacion.taller_rechazado',
+  EventType.cotizacionPagoIniciado: 'cotizacion.pago_iniciado',
+  EventType.cotizacionPagoConfirmado: 'cotizacion.pago_confirmado',
+  EventType.cotizacionCancelada: 'cotizacion.cancelada',
+  EventType.cotizacionCompletada: 'cotizacion.completada',
   EventType.ping: 'ping',
   EventType.pong: 'pong',
   EventType.missedEventsResponse: 'missed_events_response',

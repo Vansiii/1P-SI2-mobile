@@ -103,21 +103,33 @@ class _CotizacionCard extends StatelessWidget {
 
   Color _estadoColor(String estado) {
     switch (estado) {
+      case 'pendiente_cotizacion': return AppColors.textMuted;
+      case 'cotizando': return AppColors.info;
       case 'cotizado': return AppColors.info;
       case 'taller_seleccionado': return AppColors.warning;
+      case 'pago_pendiente': return Colors.orange;
       case 'pagado': case 'completado': return AppColors.success;
       case 'cancelado': case 'rechazado': return AppColors.error;
+      case 'negociando': return Colors.purple;
+      case 'aceptado': return Colors.teal;
+      case 'en_proceso': return AppColors.info;
       default: return AppColors.textMuted;
     }
   }
 
   IconData _estadoIcon(String estado) {
     switch (estado) {
+      case 'pendiente_cotizacion': return Icons.hourglass_empty_outlined;
+      case 'cotizando': return Icons.search_outlined;
       case 'cotizado': return Icons.price_check_outlined;
       case 'taller_seleccionado': return Icons.handshake_outlined;
+      case 'pago_pendiente': return Icons.payment_outlined;
       case 'pagado': case 'completado': return Icons.check_circle_outline;
       case 'cancelado': return Icons.cancel_outlined;
       case 'rechazado': return Icons.block_outlined;
+      case 'negociando': return Icons.chat_outlined;
+      case 'aceptado': return Icons.thumb_up_outlined;
+      case 'en_proceso': return Icons.build_circle_outlined;
       default: return Icons.hourglass_empty_outlined;
     }
   }

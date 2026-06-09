@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:merchanic_repair/core/theme/app_colors.dart';
 import 'package:merchanic_repair/widgets/map/cached_osm_tile_layer.dart';
 import 'package:merchanic_repair/shared/utils/snackbar_utils.dart';
+import 'package:merchanic_repair/features/cotizaciones/providers/cotizacion_provider.dart';
 import '../providers/workshop_selection_provider.dart';
 import '../data/models/workshop_selection_model.dart';
 
@@ -50,6 +51,26 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
           (incidentId: widget.incidentId, workshopId: widget.workshopId),
         ),
       );
+    }
+  }
+
+  Future<void> _openCotizacion() async {
+    try {
+      final repo = ref.read(cotizacionRepositoryProvider);
+      final cotizaciones = await repo.getCotizaciones();
+      final existente = cotizaciones.where(
+        (c) => c.incidenteId == widget.incidentId 
+            && c.workshopId == widget.workshopId
+            && c.estado != 'cancelado'
+            && c.estado != 'rechazado',
+      );
+      if (existente.isNotEmpty) {
+        if (mounted) context.push('/cotizaciones/${existente.first.id}');
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      context.push('/cotizaciones/preview/${widget.incidentId}/${widget.workshopId}');
     }
   }
 
@@ -103,7 +124,29 @@ class _WorkshopDetailScreenState extends ConsumerState<WorkshopDetailScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.baseBg,
-      appBar: AppBar(title: const Text('Detalle del Taller')),
+      appBar: AppBar(
+        title: const Text('Detalle del Taller'),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'cotizar') {
+                _openCotizacion();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'cotizar',
+                child: ListTile(
+                  leading: Icon(Icons.request_quote, color: AppColors.primary),
+                  title: Text('Cotizacion'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: state.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
