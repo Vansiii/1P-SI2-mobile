@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/custom_text_field.dart';
+import '../../../shared/widgets/offline_aware_image.dart';
 import '../../../shared/widgets/primary_button.dart';
 import '../../../shared/utils/snackbar_utils.dart';
 import '../providers/vehicle_provider.dart';
@@ -262,18 +263,16 @@ class _AddVehicleScreenState extends ConsumerState<AddVehicleScreen> {
                                 _showFullImageUrl(context, _uploadedImageUrl!),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: Image.network(
-                                _uploadedImageUrl!,
+                              child: OfflineAwareImage(
+                                imageUrl: _uploadedImageUrl!,
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Center(
-                                    child: Icon(
-                                      Icons.error_outline,
-                                      size: 48,
-                                      color: AppColors.error,
-                                    ),
-                                  );
-                                },
+                                errorWidget: const Center(
+                                  child: Icon(
+                                    Icons.error_outline,
+                                    size: 48,
+                                    color: AppColors.error,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -665,7 +664,10 @@ class _AddVehicleScreenState extends ConsumerState<AddVehicleScreen> {
               child: InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 4.0,
-                child: Image.network(imageUrl),
+                child: OfflineAwareImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
             Positioned(

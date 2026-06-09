@@ -245,12 +245,13 @@ class DataPreloader {
   }
 
   void _precacheImage(String url) {
+    final resolvedUrl = ApiConfig.resolveImageUrl(url);
     _apiService.dio.get<List<int>>(
-      url,
+      resolvedUrl,
       options: Options(responseType: ResponseType.bytes),
     ).then((response) {
       final bytes = Uint8List.fromList(response.data!);
-      DefaultCacheManager().putFile(url, bytes);
+      DefaultCacheManager().putFile(resolvedUrl, bytes);
     }).catchError((e) {
       debugPrint('[DataPreloader] Image preload fail: $e');
     });

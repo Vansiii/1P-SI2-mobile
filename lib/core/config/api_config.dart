@@ -43,6 +43,18 @@ class ApiConfig {
   static const String wsIncidents = '$apiVersion/ws/incidents';
   static const String wsTracking = '$apiVersion/ws/tracking';
 
+  static String resolveImageUrl(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return '';
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+    if (imageUrl.startsWith('local://')) return imageUrl;
+
+    final base = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+    final path = imageUrl.startsWith('/') ? imageUrl : '/$imageUrl';
+    return '$base$path';
+  }
+
   // Headers
   static const Map<String, String> defaultHeaders = {
     'Content-Type': 'application/json',
