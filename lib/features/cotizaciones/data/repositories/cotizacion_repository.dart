@@ -61,4 +61,50 @@ class CotizacionRepository {
     final jsonData = response.data as Map<String, dynamic>;
     return jsonData['data'] as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> getPreview(int incidenteId, int workshopId) async {
+    final response = await _apiService.getRaw(
+      '$_base/preview?incidente_id=$incidenteId&workshop_id=$workshopId',
+    );
+    final jsonData = response.data as Map<String, dynamic>;
+    return jsonData['data'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> solicitarDesdeIncidente({
+    required int incidenteId,
+    required int workshopId,
+    List<int> serviciosSeleccionados = const [],
+    String? descripcionAdicional,
+  }) async {
+    final body = <String, dynamic>{
+      'servicios_seleccionados': serviciosSeleccionados,
+      if (descripcionAdicional != null) 'descripcion_adicional': descripcionAdicional,
+    };
+    final response = await _apiService.dio.post(
+      '$_base/solicitar-desde-incidente?incidente_id=$incidenteId&workshop_id=$workshopId',
+      data: body,
+    );
+    final jsonData = response.data as Map<String, dynamic>;
+    return jsonData['data'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> aceptarCotizacion(int cotizacionId, {int? respuestaId}) async {
+    String path = '$_base/$cotizacionId/aceptar';
+    if (respuestaId != null) path += '?respuesta_id=$respuestaId';
+    final response = await _apiService.dio.post(path);
+    final jsonData = response.data as Map<String, dynamic>;
+    return jsonData['data'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> iniciarNegociacion(int cotizacionId) async {
+    final response = await _apiService.dio.post('$_base/$cotizacionId/iniciar-negociacion');
+    final jsonData = response.data as Map<String, dynamic>;
+    return jsonData['data'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getRuta(int cotizacionId) async {
+    final response = await _apiService.getRaw('$_base/$cotizacionId/ruta');
+    final jsonData = response.data as Map<String, dynamic>;
+    return jsonData['data'] as Map<String, dynamic>;
+  }
 }

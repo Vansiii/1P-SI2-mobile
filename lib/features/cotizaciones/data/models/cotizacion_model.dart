@@ -74,6 +74,10 @@ class CotizacionModel {
   final String estado;
   final String? stripePaymentIntentId;
   final double? montoPagado;
+  final double? montoAceptado;
+  final String version;
+  final int? incidenteId;
+  final int? chatSalaId;
   final List<CotizacionRespuestaModel> respuestas;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -104,6 +108,10 @@ class CotizacionModel {
     required this.estado,
     this.stripePaymentIntentId,
     this.montoPagado,
+    this.montoAceptado,
+    this.version = 'v1',
+    this.incidenteId,
+    this.chatSalaId,
     required this.respuestas,
     this.createdAt,
     this.updatedAt,
@@ -144,6 +152,12 @@ class CotizacionModel {
       montoPagado: json['monto_pagado'] != null
           ? (json['monto_pagado'] as num).toDouble()
           : null,
+      montoAceptado: json['monto_aceptado'] != null
+          ? (json['monto_aceptado'] as num).toDouble()
+          : null,
+      version: json['version'] as String? ?? 'v1',
+      incidenteId: json['incidente_id'] as int?,
+      chatSalaId: json['chat_sala_id'] as int?,
       respuestas: json['respuestas'] != null
           ? (json['respuestas'] as List)
               .map((r) => CotizacionRespuestaModel.fromJson(r as Map<String, dynamic>))
@@ -170,6 +184,8 @@ class CotizacionModel {
       case 'completado': return 'Completado';
       case 'cancelado': return 'Cancelado';
       case 'rechazado': return 'Rechazado';
+      case 'negociando': return 'En negociacion';
+      case 'aceptado': return 'Aceptado';
       default: return estado;
     }
   }
@@ -188,6 +204,9 @@ class CotizacionListItemModel {
   final double? costoTotalEstimado;
   final String? tallerNombre;
   final int respuestasCount;
+  final int? incidenteId;
+  final int? workshopId;
+  final String? version;
   final DateTime? createdAt;
 
   CotizacionListItemModel({
@@ -203,6 +222,9 @@ class CotizacionListItemModel {
     this.costoTotalEstimado,
     this.tallerNombre,
     required this.respuestasCount,
+    this.incidenteId,
+    this.workshopId,
+    this.version,
     this.createdAt,
   });
 
@@ -222,6 +244,9 @@ class CotizacionListItemModel {
           : null,
       tallerNombre: json['taller_nombre'] as String?,
       respuestasCount: json['respuestas_count'] as int? ?? 0,
+      incidenteId: json['incidente_id'] as int?,
+      workshopId: json['workshop_id'] as int?,
+      version: json['version'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -240,6 +265,8 @@ class CotizacionListItemModel {
       case 'completado': return 'Completado';
       case 'cancelado': return 'Cancelado';
       case 'rechazado': return 'Rechazado';
+      case 'negociando': return 'En negociacion';
+      case 'aceptado': return 'Aceptado';
       default: return estado;
     }
   }
