@@ -126,18 +126,32 @@ class _OfflineBannerState extends ConsumerState<OfflineBanner>
 
     return SlideTransition(
       position: _slideAnim,
-      child: MaterialBanner(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        backgroundColor: data.bg,
-        leading: Icon(data.icon, color: Colors.white, size: 22),
-        content: Text(
-          data.message,
-          style:
-              const TextStyle(color: Colors.white, fontSize: 13, height: 1.3),
+      child: Material(
+        color: data.bg,
+        child: SafeArea(
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(data.icon, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    data.message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                if (data.action != null) data.action!,
+              ],
+            ),
+          ),
         ),
-        actions: data.action != null
-            ? [data.action!]
-            : <Widget>[const SizedBox.shrink()],
       ),
     );
   }

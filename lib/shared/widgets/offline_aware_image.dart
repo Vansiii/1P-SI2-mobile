@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../core/config/api_config.dart';
 
 class OfflineAwareImage extends StatelessWidget {
   final String imageUrl;
@@ -20,6 +22,9 @@ class OfflineAwareImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (imageUrl.isEmpty) {
+      return errorWidget ?? const Icon(Icons.broken_image);
+    }
     if (imageUrl.startsWith('local://')) {
       final localPath = imageUrl.substring(8);
       final file = File(localPath);
@@ -28,17 +33,23 @@ class OfflineAwareImage extends StatelessWidget {
         fit: fit,
         width: width,
         height: height,
-        errorBuilder: (_, __, ___) =>
-            errorWidget ?? const Icon(Icons.broken_image),
+        errorBuilder: (_, __, ___) {
+          debugPrint('[OfflineAwareImage] Error loading local file: $localPath');
+          return errorWidget ?? const Icon(Icons.broken_image);
+        },
       );
     }
+    final resolvedUrl = ApiConfig.resolveImageUrl(imageUrl);
+    debugPrint('[OfflineAwareImage] Loading: $resolvedUrl');
     return CachedNetworkImage(
-      imageUrl: imageUrl,
+      imageUrl: resolvedUrl,
       fit: fit,
       width: width,
       height: height,
-      errorWidget: (_, __, ___) =>
-          errorWidget ?? const Icon(Icons.broken_image),
+      errorWidget: (_, url, error) {
+        debugPrint('[OfflineAwareImage] Error loading: $url | $error');
+        return errorWidget ?? const Icon(Icons.broken_image);
+      },
       placeholder: (_, __) => const Center(
         child: SizedBox(
           width: 24, height: 24,
